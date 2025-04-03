@@ -211,7 +211,7 @@ const WhitelistPanel = ({ user }) => {
             {/* Barra de búsqueda y botón de crear */}
             <div className="flex items-center mb-4">
                 <div className="relative flex-grow mr-4">
-                    <img className="w-12 absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500" src="/public/search.png" />
+                    <img className="w-12 absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500" src="/search.png" />
                     <input
                         type="text"
                         placeholder="Buscar Lista Blanca"
