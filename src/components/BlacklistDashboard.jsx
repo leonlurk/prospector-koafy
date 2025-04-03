@@ -357,7 +357,7 @@ const BlacklistDashboard = ({ user }) => {
       {/* Barra de búsqueda y botón de cargar perfiles */}
       <div className="flex items-center mb-4">
         <div className="relative flex-grow mr-4">
-          <img className="w-12 absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500" src="/public/search.png" />
+          <img className="w-12 absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500" src="/search.png" />
           <input
             type="text"
             placeholder="Buscar Perfil"
@@ -370,7 +370,7 @@ const BlacklistDashboard = ({ user }) => {
           onClick={() => setIsAddUserModalOpen(true)}
           className="bg-white text-black px-4 py-3 rounded-full border border-gray-200 flex items-center gap-2 h-16"
         >
-          <img src="/public/user-add.png" className="w-8"/> Cargar perfiles
+          <img src="/user-add.png" className="w-8"/> Cargar perfiles
         </button>
       </div>
 
@@ -389,7 +389,7 @@ const BlacklistDashboard = ({ user }) => {
             >
               <div className="flex items-center space-x-4">
                 <img 
-                  src="/public/blacklisted.png" 
+                  src="/blacklisted.png" 
                   alt="User Avatar" 
                   className="w-20 rounded-full object-cover"
                 />

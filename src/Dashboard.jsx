@@ -463,7 +463,7 @@ const Dashboard = () => {
         <div className="p-4 md:p-6 bg-[#F3F2FC] min-h-screen">
           <div className="flex flex-row justify-between items-center mb-4 md:mb-6 gap-2">
   <div className="relative flex-grow">
-    <img className="w-12 absolute left-4 top-1/2 transform -translate-y-1/2" src="/public/search.png"/>
+    <img className="w-12 absolute left-4 top-1/2 transform -translate-y-1/2" src="/search.png"/>
     <input
       type="text"
       placeholder="Buscar Plantilla"
