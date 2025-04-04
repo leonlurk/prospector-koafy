@@ -608,7 +608,7 @@ const Dashboard = () => {
 
       {/* Botón de menú móvil */}
       <button
-        className="md:hidden fixed top-4 left-4 z-40 bg-[#5468FF] text-white p-2 rounded-full shadow-md"
+        className="md:hidden fixed top-4 left-4 z-40 bg-gradient-to-br from-[#232323] to-[#383737] text-white p-4 rounded-xl shadow-md"
         onClick={toggleSidebar}
       >
         <FaBars size={20} />
