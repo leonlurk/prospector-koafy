@@ -662,7 +662,6 @@ const NuevaCampanaModal = ({ isOpen, onClose, user, instagramToken }) => {
       
       updateProgress(100, `Mensajes enviados exitosamente a ${data.sent_count || 0} usuarios`);
       setError(null);
-      alert(`Mensajes enviados exitosamente a ${data.sent_count || 0} usuarios`);
       setStep(4);
       
     } catch (error) {
