@@ -1196,12 +1196,14 @@ const NuevaCampanaModal = ({ isOpen, onClose, user, instagramToken }) => {
         return;
       }
       
+      // Verificar que se haya seleccionado una tarea
       const hasTask = Object.values(tasks).some(val => val);
       if (!hasTask) {
-        setError("Debes seleccionar al menos una tarea");
+        setError("Debes seleccionar una tarea");
         return;
       }
       
+      // Si la tarea es enviar media, verificar el link
       if (tasks.enviarMedia && !targetLink.includes("/p/")) {
         setError("Para enviar media, debes seleccionar una publicación en el paso 1");
         return;
@@ -1227,9 +1229,7 @@ const NuevaCampanaModal = ({ isOpen, onClose, user, instagramToken }) => {
           }
           
           setStep(step + 1);
-        } /* else if (users.length === 0) {
-          setError("No se pudieron obtener usuarios para la campaña");
-        } */
+        }
       } catch (error) {
         console.error("Error al obtener usuarios:", error);
         setError("Error al obtener usuarios: " + error.message);
@@ -1498,56 +1498,84 @@ if (users.length === 0) {
 
               
               {/* Tareas */}
-              <div className="mb-6">
-                <div className="flex items-center mb-3">
-                  <div className="w-8 h-8 bg-transparent rounded-full flex items-center justify-center mr-2">
-                  <img src="/assets/flag.png" alt="Flag" className="w-8 h-8 text-white" />
+                <div className="mb-6">
+                  <div className="flex items-center mb-3">
+                    <div className="w-8 h-8 bg-transparent rounded-full flex items-center justify-center mr-2">
+                      <img src="/assets/flag.png" alt="Flag" className="w-8 h-8 text-white" />
+                    </div>
+                    <h3 className="text-lg font-semibold text-black">Tareas (elige una)</h3>
                   </div>
-                  <h3 className="text-lg font-semibold text-black">Tareas</h3>
+                  
+                  <div className="pl-10 space-y-2 text-black">
+                    <label className="flex items-center space-x-2">
+                      <input 
+                        type="radio"
+                        checked={tasks.seguir}
+                        onChange={() => setTasks({
+                          seguir: true,
+                          enviarMensaje: false,
+                          darLikes: false,
+                          comentar: false,
+                          enviarMedia: false
+                        })}
+                        name="task"
+                        className="w-5 h-5"
+                      />
+                      <span>Seguir instagrammers</span>
+                    </label>
+                    
+                    <label className="flex items-center space-x-2">
+                      <input 
+                        type="radio"
+                        checked={tasks.enviarMensaje}
+                        onChange={() => setTasks({
+                          seguir: false,
+                          enviarMensaje: true,
+                          darLikes: false,
+                          comentar: false,
+                          enviarMedia: false
+                        })}
+                        name="task"
+                        className="w-5 h-5"
+                      />
+                      <span>Enviar Mensaje</span>
+                    </label>
+                    
+                    <label className="flex items-center space-x-2">
+                      <input 
+                        type="radio"
+                        checked={tasks.darLikes}
+                        onChange={() => setTasks({
+                          seguir: false,
+                          enviarMensaje: false,
+                          darLikes: true,
+                          comentar: false,
+                          enviarMedia: false
+                        })}
+                        name="task"
+                        className="w-5 h-5"
+                      />
+                      <span>Dar likes a las publicaciones</span>
+                    </label>
+                    
+                    <label className="flex items-center space-x-2">
+                      <input 
+                        type="radio"
+                        checked={tasks.comentar}
+                        onChange={() => setTasks({
+                          seguir: false,
+                          enviarMensaje: false,
+                          darLikes: false,
+                          comentar: true,
+                          enviarMedia: false
+                        })}
+                        name="task"
+                        className="w-5 h-5"
+                      />
+                      <span>Comentar en sus publicaciones (soon)</span>
+                    </label>
+                  </div>
                 </div>
-                
-                <div className="pl-10 space-y-2 text-black">
-                  <label className="flex items-center space-x-2">
-                    <input 
-                      type="checkbox"
-                      checked={tasks.seguir}
-                      onChange={(e) => setTasks({...tasks, seguir: e.target.checked})}
-                      className="w-5 h-5"
-                    />
-                    <span>Seguir instagrammers</span>
-                  </label>
-                  
-                  <label className="flex items-center space-x-2">
-                    <input 
-                      type="checkbox"
-                      checked={tasks.enviarMensaje}
-                      onChange={(e) => setTasks({...tasks, enviarMensaje: e.target.checked})}
-                      className="w-5 h-5"
-                    />
-                    <span>Enviar Mensaje</span>
-                  </label>
-                  
-                  <label className="flex items-center space-x-2">
-                    <input 
-                      type="checkbox"
-                      checked={tasks.darLikes}
-                      onChange={(e) => setTasks({...tasks, darLikes: e.target.checked})}
-                      className="w-5 h-5"
-                    />
-                    <span>Dar likes a las publicaciones</span>
-                  </label>
-                  
-                  <label className="flex items-center space-x-2">
-                    <input 
-                      type="checkbox"
-                      checked={tasks.comentar}
-                      onChange={(e) => setTasks({...tasks, comentar: e.target.checked})}
-                      className="w-5 h-5"
-                    />
-                    <span>Comentar en sus publicaciones (soon)</span>
-                  </label>
-                </div>
-              </div>
             </div>
           )}
           
