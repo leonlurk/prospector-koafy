@@ -300,10 +300,6 @@ const Dashboard = () => {
       showNotification("El nombre de la plantilla es obligatorio.", "error");
       return;
     }
-    if (!selectedPlatform || selectedPlatform === "Plataformas") {
-      showNotification("Debes seleccionar una plataforma válida.", "error");
-      return;
-    }
     if (!newTemplateBody?.trim()) {
       showNotification("El cuerpo del mensaje es obligatorio.", "error");
       return;
@@ -314,12 +310,11 @@ const Dashboard = () => {
       const templateRef = collection(db, "users", user.uid, "templates");
       await addDoc(templateRef, {
         name: newTemplate.trim(),
-        platform: selectedPlatform.trim(),
         body: newTemplateBody.trim(),
         userId: user.uid,
         createdAt: new Date(),
         type: selectedType !== "Tipo" ? selectedType : "Plantillas de mensajes",
-      });
+    });
       showNotification("Plantilla guardada con éxito", "success");
       setNewTemplate("");
       setSelectedPlatform("Plataformas");
@@ -514,9 +509,7 @@ const Dashboard = () => {
                         <p className="font-semibold text-black truncate text-sm md:text-base">
                           {template.name}
                         </p>
-                        <p className="text-xs md:text-sm text-gray-500 truncate">
-                          {template.platform || "Sin plataforma"}
-                        </p>
+
                       </div>
                     </div>
                     <button
@@ -660,7 +653,6 @@ const Dashboard = () => {
     template={{
       id: null,
       name: newTemplate,
-      platform: selectedPlatform !== "Plataformas" ? selectedPlatform : "",
       body: newTemplateBody,
       userId: user?.uid || "",
       type: selectedType !== "Tipo" ? selectedType : "Plantillas"
@@ -672,7 +664,6 @@ const Dashboard = () => {
     setNewTemplateBody={setNewTemplateBody}
     selectedType={selectedType}
     setSelectedType={setSelectedType}
-    setSelectedPlatform={setSelectedPlatform} // Añadir esta nueva prop
   />
 )}
 

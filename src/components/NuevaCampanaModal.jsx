@@ -33,6 +33,7 @@ const NuevaCampanaModal = ({ isOpen, onClose, user, instagramToken }) => {
   const [templates, setTemplates] = useState([]);
   const [showWhitelistModal, setShowWhitelistModal] = useState(false);
   const [lastWhitelistOperation, setLastWhitelistOperation] = useState(null);
+  // Crear un nombre de campaña significativo si no se proporciona
   
   // Estados para multimedia
   const [mediaFile, setMediaFile] = useState(null);
@@ -82,7 +83,29 @@ const NuevaCampanaModal = ({ isOpen, onClose, user, instagramToken }) => {
   };
   
   const removeUser = (username) => {
-    setUsers(users.filter(user => user !== username));
+    console.log("Removing user:", username);
+    console.log("Users before removal:", users);
+    
+    // Create a new filtered array excluding the specified username
+    const updatedUsers = users.filter(user => user !== username);
+    
+    console.log("Users after removal:", updatedUsers);
+    
+    // Update the state with the new filtered array
+    setUsers(updatedUsers);
+    
+    // If we've already done filtering for blacklisted users, update that state too
+    if (filteredUsers) {
+      const updatedFilteredUsers = {
+        ...filteredUsers,
+        original: updatedUsers.length,
+        // If the removed user was in the filtered list, update it
+        filtered: filteredUsers.blacklistedUsers.includes(username) 
+          ? filteredUsers.filtered 
+          : filteredUsers.filtered - 1,
+      };
+      setFilteredUsers(updatedFilteredUsers);
+    }
   };
   
   const updateFilteredUsersState = (filteredResult) => {
@@ -376,7 +399,7 @@ const NuevaCampanaModal = ({ isOpen, onClose, user, instagramToken }) => {
   
   // Funciones para acciones principales
   const followAllUsers = async () => {
-    if (users.length === 0) {
+    if (result.length === 0) {
       setError("No hay usuarios para seguir");
       return;
     }
@@ -400,11 +423,17 @@ const NuevaCampanaModal = ({ isOpen, onClose, user, instagramToken }) => {
       updateProgress(10, "Preparando campaña de seguimiento...");
       
       if (user?.uid) {
+
+        const effectiveCampaignName = campaignName || `Mensajes a ${result.length} usuarios - ${new Date().toLocaleDateString()}`;
+
         const campaignOptions = createCampaignOptions({
-          type: "follow_users",  // Correcto para seguir usuarios
-          users: users,
-          endpoint: "/seguir_usuarios",
-          postLink: targetLink
+          type: "send_messages",
+          name: effectiveCampaignName,
+          users: result,
+          endpoint: "/enviar_mensajes_multiple",
+          templateName: selectedTemplate?.name || null,
+          postLink: targetLink,
+          message: mensaje.substring(0, 100) + (mensaje.length > 100 ? "..." : "")
         });
         
         campaignId = await createCampaignStore(user.uid, campaignOptions);
@@ -493,18 +522,29 @@ const NuevaCampanaModal = ({ isOpen, onClose, user, instagramToken }) => {
       return;
     }
     
-    if (!mensaje.trim()) {
-      setError("El mensaje no puede estar vacío");
+    // Solo validar mensaje vacío si no estamos enviando media
+    if (!tasks.enviarMedia && (!mensaje || !mensaje.trim())) {
+      console.error("Empty message detected:", mensaje);
+      setError("El mensaje no puede estar vacío. Por favor, escribe un mensaje.");
       return;
     }
     
+    // Log message content for debugging
+    console.log("Sending message content:", mensaje);
+    console.log("Message length:", mensaje ? mensaje.length : 0);
+    
     const result = await checkBlacklistedUsers(users, user, (msg) => setError(msg), "NuevaCampanaModal");
     updateFilteredUsersState(result);
-  
+    
     if (result.length === 0) {
       setError("Todos los usuarios están en listas negras. No se enviaron mensajes.");
       return;
     }
+    
+    // Add debug logging
+    console.log("Message to send:", mensaje);
+    console.log("Original users:", users);
+    console.log("Filtered users for sending:", result);
     
     setLoading(true);
     setError("");
@@ -517,12 +557,18 @@ const NuevaCampanaModal = ({ isOpen, onClose, user, instagramToken }) => {
       updateProgress(10, "Preparando campaña de mensajes...");
       
       if (user?.uid) {
+        // Definir un nombre efectivo para la campaña - ESTO ES LO QUE FALTA
+        const effectiveCampaignName = campaignName || `Mensajes a ${result.length} usuarios - ${new Date().toLocaleDateString()}`;
+        
+        // En sendMessages, creación de opciones de campaña
         const campaignOptions = createCampaignOptions({
           type: "send_messages",
-          users: users,
+          name: effectiveCampaignName,  // Ahora usa la variable definida arriba
+          users: result,  
           endpoint: "/enviar_mensajes_multiple",
           templateName: selectedTemplate?.name || null,
-          postLink: targetLink
+          postLink: targetLink,
+          message: mensaje ? mensaje.substring(0, 100) + (mensaje.length > 100 ? "..." : "") : ""
         });
         
         try {
@@ -543,7 +589,7 @@ const NuevaCampanaModal = ({ isOpen, onClose, user, instagramToken }) => {
         await logApiRequest({
           endpoint: "/enviar_mensajes_multiple",
           requestData: { 
-            usuarios_count: users.length,
+            usuarios_count: result.length,  // CHANGED: Use filtered count instead of total count
             mensaje_length: mensaje.length,
             template_id: selectedTemplate ? selectedTemplate.id : null,
             campaign_id: campaignId || null
@@ -553,7 +599,7 @@ const NuevaCampanaModal = ({ isOpen, onClose, user, instagramToken }) => {
           source: "NuevaCampanaModal",
           metadata: {
             action: "send_messages",
-            usersCount: users.length,
+            usersCount: result.length,  // CHANGED: Use filtered count
             messageLength: mensaje.length,
             templateId: selectedTemplate ? selectedTemplate.id : null,
             templateName: selectedTemplate ? selectedTemplate.name : null, 
@@ -947,13 +993,43 @@ const NuevaCampanaModal = ({ isOpen, onClose, user, instagramToken }) => {
     try {
       updateProgress(10, "Preparando archivo multimedia...");
       
+      // Validaciones de archivo
+      if (!mediaFile) {
+        throw new Error("No se ha seleccionado ningún archivo multimedia");
+      }
+      
+      // Verificación del tipo de archivo
+      const validImageTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
+      const validVideoTypes = ['video/mp4', 'video/quicktime', 'video/webm'];
+      
+      if (mediaType === 'image' && !validImageTypes.includes(mediaFile.type)) {
+        throw new Error(`Tipo de imagen no soportado: ${mediaFile.type}. Use: JPG, PNG, GIF o WebP`);
+      }
+      
+      if (mediaType === 'video' && !validVideoTypes.includes(mediaFile.type)) {
+        throw new Error(`Tipo de video no soportado: ${mediaFile.type}. Use: MP4, MOV o WebM`);
+      }
+      
+      // Verificación de tamaño de archivo (máximo 100MB para simplificar)
+      const MAX_FILE_SIZE = 100 * 1024 * 1024; // 100MB
+      if (mediaFile.size > MAX_FILE_SIZE) {
+        throw new Error(`El archivo es demasiado grande (${(mediaFile.size / (1024 * 1024)).toFixed(2)}MB). Máximo 100MB.`);
+      }
+      
+      console.log("Verificaciones de archivo completadas:", {
+        fileName: mediaFile.name,
+        fileType: mediaFile.type,
+        fileSize: `${(mediaFile.size / 1024).toFixed(2)}KB`,
+        mediaType: mediaType
+      });
+      
       if (user?.uid) {
         const campaignOptions = createCampaignOptions({
           type: "send_media",
           users: users,
           endpoint: "/enviar_media",
           mediaType: mediaType,
-          fileName: mediaFile?.name || "archivo.media", // Añadir esto
+          fileName: mediaFile?.name || "archivo.media",
           postLink: targetLink
         });
         
@@ -962,6 +1038,7 @@ const NuevaCampanaModal = ({ isOpen, onClose, user, instagramToken }) => {
         
         if (campaignId) {
           stopMonitoring = startCampaignMonitoring(user.uid, campaignId, { token: instagramToken });
+          console.log("Campaña creada con ID:", campaignId);
         }
       }
       
@@ -986,11 +1063,34 @@ const NuevaCampanaModal = ({ isOpen, onClose, user, instagramToken }) => {
             campaignId: campaignId
           }
         });
+        console.log("Operación registrada en logs");
       }
       
       updateProgress(30, `Enviando ${mediaType} a ${result.length} usuarios...`);
-      const data = await instagramApi.sendMedia(result, mediaFile, mediaType, mediaCaption, false);
+      
+      console.log("Preparando llamada a instagramApi.sendMedia:", {
+        resultLength: result.length,
+        mediaType,
+        hasMediaCaption: !!mediaCaption,
+        mediaCaptionLength: mediaCaption ? mediaCaption.length : 0,
+        hasInstagramToken: !!instagramToken,
+        tokenPreview: instagramToken ? `${instagramToken.substring(0, 10)}...` : null
+      });
+      
+      // Llamada a la API con el token incluido
+      const data = await instagramApi.sendMedia(result, mediaFile, mediaType, mediaCaption, false, instagramToken);
+      
+      console.log("Respuesta de sendMedia recibida:", data);
       updateProgress(70, "Procesando resultados...");
+      
+      // Verificar que data tenga la estructura esperada
+      if (!data || typeof data !== 'object') {
+        throw new Error("Respuesta inválida del servidor");
+      }
+      
+      if (data.status !== "success") {
+        throw new Error(`Error del servidor: ${data.message || "Desconocido"}`);
+      }
       
       if (campaignId) {
         await updateCampaign(user.uid, campaignId, {
@@ -999,6 +1099,7 @@ const NuevaCampanaModal = ({ isOpen, onClose, user, instagramToken }) => {
           filteredUsers: result.length,
           blacklistedUsers: users.length - result.length
         });
+        console.log("Campaña actualizada con la respuesta inicial");
       }
       
       updateProgress(90, "Finalizando envío de medios...");
@@ -1034,6 +1135,7 @@ const NuevaCampanaModal = ({ isOpen, onClose, user, instagramToken }) => {
             campaignId: campaignId
           }
         });
+        console.log("Operación finalizada y registrada en logs");
       }
       
       updateProgress(100, `Medios enviados exitosamente a ${data.sent_count || 0} usuarios`);
@@ -1042,6 +1144,23 @@ const NuevaCampanaModal = ({ isOpen, onClose, user, instagramToken }) => {
       setStep(4);
       
     } catch (error) {
+      console.error("Error detallado en sendMedia:", error);
+      
+
+      
+      // Log detallado del error
+      console.error({
+        errorType: error.name,
+        errorMessage: error.message,
+        errorStack: error.stack,
+        mediaType,
+        fileInfo: mediaFile ? {
+          name: mediaFile.name,
+          type: mediaFile.type,
+          size: mediaFile.size
+        } : 'No file'
+      });
+      
       handleTaskError(error, campaignId, stopMonitoring, "/enviar_media", "send_media");
     } finally {
       setLoading(false);
@@ -1122,36 +1241,64 @@ const NuevaCampanaModal = ({ isOpen, onClose, user, instagramToken }) => {
       return;
     }
     
-    if (step === 3) {
-      if ((tasks.enviarMensaje || tasks.comentar) && !mensaje.trim()) {
-        setError("Debes escribir un mensaje para enviar");
-        return;
-      }
-      
-      if (tasks.enviarMedia && !mediaFile) {
-        setError("Debes seleccionar un archivo de imagen o video para enviar");
-        return;
-      }
-      
-      if (users.length === 0) {
-        setError("No hay usuarios para realizar acciones. Revisa los pasos anteriores.");
-        return;
-      }
-      
-      if (users.length > 100) {
-        const confirmContinue = window.confirm(`¿Estás seguro de querer procesar ${users.length} usuarios? Esto podría generar limitaciones en tu cuenta de Instagram.`);
-        if (!confirmContinue) {
-          return;
-        }
-      }
-      
-      try {
-        await createCampaign();
-      } catch (error) {
-        console.error("Error al crear la campaña:", error);
-        setError("Error al crear la campaña: " + error.message);
-      }
+    // In handleNext function, modify the step 3 section:
+// In handleNext function, step 3 section:
+if (step === 3) {
+  // Distinguir las validaciones según el tipo de tarea seleccionada
+  if ((tasks.enviarMensaje || tasks.comentar) && !tasks.enviarMedia) {
+    // Solo validar mensaje si la tarea es enviar mensaje o comentar (y no enviar media)
+    if (!mensaje?.trim()) {
+      setError("Debes escribir un mensaje para enviar");
+      return;
     }
+  }
+
+ // Para tareas de media, solo validar el archivo de media
+ if (tasks.enviarMedia && !mediaFile) {
+  setError("Debes seleccionar un archivo de imagen o video para enviar");
+  return;
+}
+
+if (users.length === 0) {
+  setError("No hay usuarios para realizar acciones. Revisa los pasos anteriores.");
+  return;
+}
+  
+  if (users.length > 100) {
+    const confirmContinue = window.confirm(`¿Estás seguro de querer procesar ${users.length} usuarios? Esto podría generar limitaciones en tu cuenta de Instagram.`);
+    if (!confirmContinue) {
+      return;
+    }
+  }
+  
+  try {
+    // REMOVED: await createCampaign() - We'll let the individual action functions handle campaign creation
+    
+    // Execute the appropriate action based on selected tasks
+    if (tasks.enviarMensaje) {
+      await sendMessages();
+      return;
+    }
+    
+    if (tasks.enviarMedia && mediaFile) {
+      await sendMedia();
+      return;
+    }
+    
+    if (tasks.darLikes) {
+      await likeLatestPosts();
+      return;
+    }
+    
+    if (tasks.comentar) {
+      await commentOnLatestPosts();
+      return;
+    }
+  } catch (error) {
+    console.error("Error al ejecutar la acción:", error);
+    setError("Error al ejecutar la acción: " + error.message);
+  }
+}
   };
   
   const createCampaign = async () => {
@@ -1250,34 +1397,34 @@ const NuevaCampanaModal = ({ isOpen, onClose, user, instagramToken }) => {
   if (!isOpen) return null;
   
   return (
-<div className="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-50 p-2">
-<div className="bg-white rounded-3xl w-full max-w-6xl max-h-[90vh] overflow-auto">
-        {/* Header */}
-        <div className="flex justify-between items-center p-4 border-b">
-      <h2 className="text-xl font-medium text-black">
-            Nueva Campaña - Paso {step} de 4
-          </h2>
-          <button
-            onClick={onClose}
-            className="text-gray-500 hover:text-gray-700 bg-transparent border-0 p-2 rounded-full hover:bg-gray-100">
-            <FaTimes size={16} />
-          </button>
-        </div>
+<div className="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-50 p-2 sm:p-4">
+  <div className="bg-white rounded-3xl w-full max-w-6xl max-h-[90vh] overflow-auto">
+    {/* Responsive header with adjusted padding */}
+    <div className="flex justify-between items-center p-3 sm:p-4 border-b">
+      <h2 className="text-lg sm:text-xl font-medium text-black">
+        Nueva Campaña - Paso {step} de 4
+      </h2>
+      <button
+        onClick={onClose}
+        className="text-gray-500 hover:text-gray-700 bg-transparent border-0 p-2 rounded-full hover:bg-gray-100">
+        <FaTimes size={16} />
+      </button>
+    </div>
         
         {/* Contenido dinámico según el paso */}
-        <div className="p-4">
-          {/* Mensaje de error */}
-          {error && (
-        <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-md text-red-600 text-sm">
-          {error}
-            </div>
-          )}
+        <div className="p-3 sm:p-4">
+        {/* Mensaje de error */}
+        {error && (
+          <div className="mb-3 sm:mb-4 p-2 sm:p-3 bg-red-50 border border-red-200 rounded-md text-red-600 text-sm">
+            {error}
+          </div>
+        )}
           
           {/* Paso 1: Información básica */}
           {step === 1 && (
             <div>
               <div className="mb-4">
-              <label className="block text-lg sm:text-xl text-black font-semibold mb-1 sm:mb-2">Nombre de la Campaña</label>
+                <label className="block text-base sm:text-lg text-black font-semibold mb-1 sm:mb-2">Nombre de la Campaña</label>
                 <input 
                   type="text"
                   value={campaignName}
@@ -1288,12 +1435,12 @@ const NuevaCampanaModal = ({ isOpen, onClose, user, instagramToken }) => {
               </div>
               
               <div className="mb-4">
-                <label className="block text-xl text-black font-semibold mb-2">Pega el link del perfil o publicación</label>
+                <label className="block text-base sm:text-xl text-black font-semibold mb-1 sm:mb-2">Pega el link del perfil o publicación</label>
                 <input 
                   type="text"
                   value={targetLink}
                   onChange={(e) => setTargetLink(e.target.value)}
-                  className="w-full p-3 text-black bg-white border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full p-2 sm:p-3 text-black bg-white border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm sm:text-base"
                   placeholder="https://www.instagram.com/..."
                 />
               </div>
@@ -1302,54 +1449,53 @@ const NuevaCampanaModal = ({ isOpen, onClose, user, instagramToken }) => {
               </div>
             </div>
           )}
-          
           {/* Paso 2: Objetivos y tareas */}
           {step === 2 && (
             <div>
               {/* Objetivos */}
-              <div className="mb-6 w-auto">
-                <div className="flex items-center mb-3">
-                  <div className="w-8 h-8 bg-transparent rounded-full flex items-center justify-center mr-2">
-                    <img src="/assets/gps.png" alt="Filter" className="w-8 h-8 text-white" />
-                  </div>
-                  <h3 className="text-lg font-semibold text-black">Objetivos (elige uno)</h3>
+            <div className="mb-5 sm:mb-6 w-auto">
+              <div className="flex items-center mb-2 sm:mb-3">
+                <div className="w-6 h-6 sm:w-8 sm:h-8 bg-transparent rounded-full flex items-center justify-center mr-2">
+                  <img src="/assets/gps.png" alt="Filter" className="w-6 h-6 sm:w-8 sm:h-8 text-white" />
                 </div>
-                
-                <div className="pl-10 space-y-2">
-                  <label className="flex items-center space-x-2 text-black">
-                    <input 
-                      type="radio"
-                      checked={selectedObjective === "comentarios"}
-                      onChange={() => setSelectedObjective("comentarios")}
-                      name="objective"
-                      className="w-5 h-5"
-                    />
-                    <span>Comentarios de la publicación</span>
-                  </label>
-                  
-                  <label className="flex items-center space-x-2 text-black">
-                    <input 
-                      type="radio"
-                      checked={selectedObjective === "likes"}
-                      onChange={() => setSelectedObjective("likes")}
-                      name="objective"
-                      className="w-5 h-5"
-                    />
-                    <span>Likes de la publicación</span>
-                  </label>
-                  
-                  <label className="flex items-center space-x-2 text-black">
-                    <input 
-                      type="radio"
-                      checked={selectedObjective === "seguidores"}
-                      onChange={() => setSelectedObjective("seguidores")}
-                      name="objective"
-                      className="w-5 h-5"
-                    />
-                    <span>Seguidores del perfil</span>
-                  </label>
-                </div>
+                <h3 className="text-base sm:text-lg font-semibold text-black">Objetivos (elige uno)</h3>
               </div>
+              
+              <div className="pl-8 sm:pl-10 space-y-1 sm:space-y-2">
+                <label className="flex items-center space-x-2 text-black text-sm sm:text-base">
+                  <input 
+                    type="radio"
+                    checked={selectedObjective === "comentarios"}
+                    onChange={() => setSelectedObjective("comentarios")}
+                    name="objective"
+                    className="w-4 h-4 sm:w-5 sm:h-5"
+                  />
+                  <span>Comentarios de la publicación</span>
+                </label>
+                
+                <label className="flex items-center space-x-2 text-black text-sm sm:text-base">
+                  <input 
+                    type="radio"
+                    checked={selectedObjective === "likes"}
+                    onChange={() => setSelectedObjective("likes")}
+                    name="objective"
+                    className="w-4 h-4 sm:w-5 sm:h-5"
+                  />
+                  <span>Likes de la publicación</span>
+                </label>
+                
+                <label className="flex items-center space-x-2 text-black text-sm sm:text-base">
+                  <input 
+                    type="radio"
+                    checked={selectedObjective === "seguidores"}
+                    onChange={() => setSelectedObjective("seguidores")}
+                    name="objective"
+                    className="w-4 h-4 sm:w-5 sm:h-5"
+                  />
+                  <span>Seguidores del perfil</span>
+                </label>
+              </div>
+            </div>
 
               
               {/* Tareas */}
@@ -1408,132 +1554,287 @@ const NuevaCampanaModal = ({ isOpen, onClose, user, instagramToken }) => {
           
           {/* Paso 3: Usuarios y acciones - Modifica para que sea como la segunda captura */}
           {step === 3 && (
-  <div className="flex flex-col md:flex-row gap-0">
-    {console.log("Rendering step 3 with users:", users)}
-    {/* Lista de usuarios - Fondo blanco en lugar de gris */}
-    <UsersList 
-      users={users}
-      removeUser={removeUser}
-      filteredUsers={filteredUsers}
-      setShowBlacklist={setShowBlacklist}
-      followAllUsers={tasks.seguir ? followAllUsers : null}
-      loading={loading}
-      user={user}
-      db={db}
-      setShowWhitelistModal={setShowWhitelistModal} 
-    />
-              
-              {/* Panel de mensajes/comentarios */}
-          {(tasks.enviarMensaje || tasks.comentar) && (
-            <MessagePanel 
-              type={tasks.enviarMensaje ? "mensaje" : "comentario"}
-              mensaje={mensaje}
-              setMensaje={setMensaje}
-              selectedTemplate={selectedTemplate}
-              sendAction={tasks.enviarMensaje ? sendMessages : commentOnLatestPosts}
-              loading={loading}
-              usersCount={users.length}
-              templates={templates}
-              onMediaSelect={(file, type) => {
-                setMediaFile(file);
-                setMediaType(type);
-                
-                // Vista previa
-                if (file) {
-                  const reader = new FileReader();
-                  reader.onloadend = () => {
-                    setMediaPreview(reader.result);
-                  };
-                  reader.readAsDataURL(file);
-                }
-                
-                // Activar opción de media
-                setTasks(prev => ({...prev, enviarMedia: true}));
-              }}
-            />
-          )}
-              
-              {/* Panel de medios */}
-          {tasks.enviarMedia && (
-            <MediaPanel 
-              mediaFile={mediaFile}
-              mediaPreview={mediaPreview}
-              mediaType={mediaType}
-              mediaCaption={mediaCaption}
-              handleFileSelect={handleFileSelect}
-              setMediaCaption={setMediaCaption}
-              sendMedia={sendMedia}
-              loading={loading}
-              usersCount={users.length}
-            />
-          )}
-              
-              {/* Panel de likes */}
-          {tasks.darLikes && (
-            <LikesPanel 
-              likeLatestPosts={likeLatestPosts}
-              loading={loading}
-              usersCount={users.length}
-            />
-          )}
-            </div>
-          )}
-          
-          {/* Paso 4: Confirmación */}
-          {step === 4 && (
-            <div className="text-center py-10">
-              <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                <svg className="w-10 h-10 text-green-600" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                  <path d="M5 13L9 17L19 7" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-                </svg>
-              </div>
-              <h3 className="text-2xl font-semibold mb-2">¡Campaña creada con éxito!</h3>
-              <p className="text-gray-600 mb-4">
-                Tu campaña &ldquo;{campaignName}&rdquo; ha sido creada y está en proceso.
-                Puedes seguir su progreso en la sección de Campañas.
-              </p>
-              <button 
-                onClick={onClose}
-                className="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700"
+  <div className="flex flex-col lg:flex-row gap-4">
+    {/* Lista de usuarios - Sidebar on desktop, horizontal scrolling list on mobile */}
+    <div className="lg:w-1/3 xl:w-1/4 flex-shrink-0">
+      <div className="bg-white rounded-lg shadow-sm border border-gray-200">
+        <div className="p-3 border-b flex items-center justify-between">
+          <h3 className="font-medium text-black">Usuarios ({users.length})</h3>
+          <div className="flex gap-2">
+            <button
+              onClick={() => setShowWhitelistModal(true)}
+              className="text-xs rounded-full bg-black text-white hover:bg-white hover:border-black hover:text-black py-1 px-2"
+            >
+              Whitelist
+            </button>
+            {filteredUsers?.blacklistedCount > 0 && (
+              <button
+                onClick={() => setShowBlacklist(true)}
+                className="text-xs bg-red-50 hover:bg-red-100 text-red-600 py-1 px-2 rounded"
               >
-                Entendido
+                {filteredUsers.blacklistedCount} bloqueados
               </button>
+            )}
+          </div>
+        </div>
+        
+        {/* Auto-height user list that takes available space */}
+        <div className="max-h-[30vh] lg:max-h-[50vh] overflow-y-auto">
+          {users.length > 0 ? (
+            users.map((username, index) => (
+              <div key={index} className="flex items-center justify-between p-2 text-black hover:bg-gray-50 border-b">
+                <span className="truncate">{username}</span>
+                <button
+                  onClick={() => removeUser(username)}
+                  className="text-gray-400 hover:text-red-500"
+                  title="Eliminar usuario de la lista"
+                >
+                  <FaTimes size={14} />
+                </button>
+              </div>
+            ))
+          ) : (
+            <div className="p-4 text-center text-gray-500">
+              No hay usuarios seleccionados
             </div>
           )}
         </div>
+      </div>
+    </div>
+    
+    {/* Action panels - Take remaining space */}
+    <div className="lg:w-2/3 xl:w-3/4">
+      {/* Panel de mensajes/comentarios */}
+      {(tasks.enviarMensaje || tasks.comentar) && (
+  <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 mb-4">
+    <h3 className="font-medium mb-3 pb-2 border-b text-black">
+      {tasks.enviarMensaje ? "Enviar Mensajes" : "Comentar Publicaciones"}
+    </h3>
+    
+    <div className="space-y-3">
+      <textarea
+        value={mensaje}
+        onChange={(e) => {
+          setMensaje(e.target.value);
+          console.log("Message updated:", e.target.value); // Debug log
+        }}
+        className="w-full border rounded-lg p-3 min-h-[100px] focus:ring-2 bg-white text-black focus:ring-blue-500 focus:outline-none"
+        placeholder={`Escribe un ${tasks.enviarMensaje ? 'mensaje' : 'comentario'} para enviar a los usuarios...`}
+      ></textarea>
+      
+      <div className="flex flex-wrap gap-2 justify-between">
+        <div className="flex gap-2">
+          <button 
+            onClick={() => {
+              const fileInput = document.getElementById("message-media-input");
+              if (fileInput) fileInput.click();
+            }}
+            className="p-2 rounded-lg border hover:bg-white hover:text-black"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" className="w-5 h-5">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+            </svg>
+          </button>
+          <input
+            id="message-media-input"
+            type="file"
+            accept="image/*,video/*"
+            className="hidden"
+            onChange={(event) => {
+              setTasks(prev => ({...prev, enviarMedia: true}));
+              handleFileSelect(event);
+            }}
+          />
+          
+          <button
+            onClick={() => alert("Funcionalidad de audio en desarrollo")}
+            className="p-2 rounded-lg border hover:bg-white hover:text-black"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" className="w-5 h-5">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
+            </svg>
+          </button>
+          
+          <div className="relative">
+            <button 
+              onClick={() => {
+                const dropdown = document.getElementById("templates-dropdown");
+                if (dropdown) dropdown.classList.toggle("hidden");
+              }}
+              className="p-2 rounded-lg border bg-blue-50 text-blue-600 hover:bg-blue-100"
+            >
+              Elegir plantilla
+            </button>
+            
+            <div id="templates-dropdown" className="hidden absolute left-0 top-full mt-1 text-black w-64 bg-white border rounded-lg shadow-lg z-10">
+            <div className="p-2 border-b font-medium">Selecciona una plantilla</div>
+            <div className="max-h-40 overflow-y-auto">
+              {templates.length > 0 ? (
+                templates.map(template => (
+                  <div 
+                    key={template.id}
+                    className="p-2 hover:bg-gray-50 cursor-pointer"
+                    onClick={() => {
+                      setSelectedTemplate(template);
+                      if (template) {
+                        const messageText = template.body || template.content || "";
+                        setMensaje(messageText);
+                        console.log("Template selected:", template.name);
+                        console.log("Message set from template:", messageText);
+                      }
+                      document.getElementById("templates-dropdown").classList.add("hidden");
+                    }}
+                  >
+                    {template.name}
+                  </div>
+                ))
+              ) : (
+                <div className="p-2 text-gray-500">No hay plantillas disponibles</div>
+              )}
+            </div>
+          </div>
+          </div>
+        </div>
+        
+      </div>
+    </div>
+  </div>
+)}
+      
+      {/* Panel de medios */}
+      {tasks.enviarMedia && (
+        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 mb-4">
+          <h3 className="font-medium mb-3 pb-2 border-b">
+            Enviar Multimedia
+          </h3>
+          
+          <div className="flex flex-col sm:flex-row gap-4">
+            <div className="sm:w-1/3">
+              {mediaPreview ? (
+                <div className="relative rounded-lg overflow-hidden border aspect-square">
+                  <img 
+                    src={mediaPreview} 
+                    alt="Preview" 
+                    className="w-full h-full object-cover"
+                  />
+                  <button 
+                    onClick={() => {
+                      setMediaFile(null);
+                      setMediaPreview(null);
+                    }}
+                    className="absolute top-2 right-2 bg-black bg-opacity-50 text-white rounded-full p-1"
+                  >
+                    <FaTimes size={14} />
+                  </button>
+                </div>
+              ) : (
+                <label className="flex flex-col items-center justify-center border-2 border-dashed h-40 cursor-pointer hover:bg-gray-50 rounded-2xl">
+                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" className="w-10 h-10 text-gray-400 mb-2">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+                  </svg>
+                  <span className="text-sm text-gray-500">Seleccionar archivo</span>
+                  <input 
+                    type="file" 
+                    className="hidden"
+                    onChange={handleFileSelect}
+                    accept="image/*,video/*"
+                  />
+                </label>
+              )}
+            </div>
+            
+            <div className="sm:w-2/3 flex flex-col">
+              <textarea
+                value={mediaCaption}
+                onChange={(e) => setMediaCaption(e.target.value)}
+                className="w-full border rounded-lg p-3 mb-3 bg-white text-black focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                placeholder="Añade un texto opcional para acompañar la imagen..."
+              ></textarea>
+
+            </div>
+          </div>
+        </div>
+      )}
+      
+      {/* Panel de likes */}
+      {tasks.darLikes && (
+        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 mb-4">
+          <h3 className="font-medium mb-3 pb-2 border-b">
+            Dar Likes a Publicaciones
+          </h3>
+          
+          <div className="text-gray-600 mb-4">
+            Se dará like a la última publicación de cada usuario seleccionado.
+          </div>
+          
+          <button
+            onClick={likeLatestPosts}
+            disabled={loading}
+            className="px-4 py-2 bg-indigo-900 text-white rounded-lg disabled:opacity-50"
+          >
+            Dar likes a {users.length} usuarios
+          </button>
+        </div>
+      )}
+    </div>
+  </div>
+)}
+          
+          {/* Paso 4: Confirmación */}
+        {step === 4 && (
+          <div className="text-center py-6 sm:py-10">
+            <div className="w-16 h-16 sm:w-20 sm:h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-3 sm:mb-4">
+              <svg className="w-8 h-8 sm:w-10 sm:h-10 text-green-600" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M5 13L9 17L19 7" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+              </svg>
+            </div>
+            <h3 className="text-xl sm:text-2xl font-semibold mb-2">¡Campaña creada con éxito!</h3>
+            <p className="text-gray-600 mb-4 text-sm sm:text-base px-4 sm:px-0">
+              Tu campaña &ldquo;{campaignName}&rdquo; ha sido creada y está en proceso.
+              Puedes seguir su progreso en la sección de Campañas.
+            </p>
+            <button 
+              onClick={onClose}
+              className="bg-blue-600 text-white px-4 sm:px-6 py-1.5 sm:py-2 text-sm sm:text-base rounded-lg hover:bg-blue-700"
+            >
+              Entendido
+            </button>
+          </div>
+        )}
+        </div>
         
         {/* Footer con botones de navegación */}
-    {step < 4 && (
-      <div className="p-3 sm:p-4 border-t flex justify-end space-x-2">
-      {step > 1 && (
-        <button 
-          onClick={() => setStep(step - 1)}
-          className="px-3 sm:px-6 py-1 sm:py-2 text-sm sm:text-base bg-gray-200 text-black rounded-lg hover:bg-gray-300"
-        >
-          Atrás
-        </button>
-      )}
-      <button 
-        onClick={handleNext}
-        className="px-4 sm:px-8 py-1 sm:py-2 text-sm sm:text-base bg-indigo-900 text-white rounded-lg flex items-center justify-center"
-        disabled={loading}
-      >
-        {loading ? (
-          <>
-            <svg className="animate-spin -ml-1 mr-2 h-4 w-4 sm:h-5 sm:w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-            </svg>
-            Procesando...
-          </>
-        ) : (
-          <>
-            Siguiente <FaArrowRight className="ml-1 sm:ml-2" />
-          </>
+        {step < 4 && (
+          <div className="p-3 sm:p-4 border-t flex justify-end space-x-2">
+            {step > 1 && (
+              <button 
+                onClick={() => setStep(step - 1)}
+                className="px-3 sm:px-6 py-1 sm:py-2 text-sm sm:text-base bg-gray-200 text-black rounded-lg hover:bg-gray-300"
+              >
+                Atrás
+              </button>
+            )}
+            <button 
+              onClick={handleNext}
+              className="px-4 sm:px-8 py-1 sm:py-2 text-sm sm:text-base bg-indigo-900 text-white rounded-lg flex items-center justify-center"
+              disabled={loading}
+            >
+              {loading ? (
+                <>
+                  <svg className="animate-spin -ml-1 mr-2 h-4 w-4 sm:h-5 sm:w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                  </svg>
+                  Procesando...
+                </>
+              ) : (
+                <>
+                  Siguiente <FaArrowRight className="ml-1 sm:ml-2" />
+                </>
+              )}
+            </button>
+          </div>
         )}
-      </button>
-    </div>
-    )}
       </div>
       
       {/* Modales y overlays */}
@@ -1551,8 +1852,8 @@ const NuevaCampanaModal = ({ isOpen, onClose, user, instagramToken }) => {
         />
       )}
       {showWhitelistModal && (
-  <div className="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-50 p-4">
-    <div className="w-full max-w-md max-h-[90vh] overflow-auto bg-white rounded-lg">
+  <div className="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-50 p-2 sm:p-4">
+    <div className="w-full max-w-xs sm:max-w-md max-h-[90vh] overflow-auto bg-white rounded-lg">
       <WhitelistSelector
         user={user}
         db={db}

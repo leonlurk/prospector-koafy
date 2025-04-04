@@ -21,31 +21,16 @@ const ModalEditarPlantilla = ({
 }) => {
     // Inicializa estados considerando ambos casos (props individuales o objeto template)
     const [nombre, setNombre] = useState(isCreateMode ? name : (template.name || ""));
-    const [plataforma, setPlataforma] = useState(isCreateMode ? platform : (template.platform || ""));
     const [tipo, setTipo] = useState(isCreateMode ? (selectedType !== "Tipo" ? selectedType : "Plantillas de mensajes") : (template.type || "Plantillas de mensajes"));
     const [cuerpo, setCuerpo] = useState(isCreateMode ? body : (template.body || ""));
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState("");
     const [success, setSuccess] = useState("");
 
-    const tipos = [
-        "Plantillas de mensajes",
-        "Plantillas de comentarios"
-    ];
-
-    const plataformas = [
-        "Instagram"
-    ];
-
     const handleSave = async () => {
         // Validar todos los campos
         if (!nombre.trim()) {
             setError("El nombre de la plantilla es obligatorio");
-            return;
-        }
-        
-        if (!plataforma.trim()) {
-            setError("La plataforma es obligatoria");
             return;
         }
         
@@ -85,7 +70,6 @@ const ModalEditarPlantilla = ({
                     requestData: {
                         templateId: template.id,
                         name: nombre.trim(),
-                        platform: plataforma.trim(),
                         type: tipo,
                         bodyLength: cuerpo.trim().length
                     },
@@ -98,7 +82,6 @@ const ModalEditarPlantilla = ({
                         originalName: template.name,
                         newName: nombre.trim(),
                         originalPlatform: template.platform,
-                        newPlatform: plataforma.trim(),
                         originalType: template.type,
                         newType: tipo,
                         originalBodyLength: template.body?.length || 0,
@@ -109,10 +92,9 @@ const ModalEditarPlantilla = ({
                 const templateRef = doc(db, "users", template.userId, "templates", template.id);
                 await updateDoc(templateRef, {
                     name: nombre.trim(),
-                    platform: plataforma.trim(),
                     type: tipo,
                     body: cuerpo.trim(),
-                    updatedAt: new Date() // Añadir fecha de actualización
+                    updatedAt: new Date()
                 });
                 
                 setSuccess("Plantilla actualizada con éxito");

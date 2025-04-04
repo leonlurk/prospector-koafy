@@ -36,7 +36,27 @@ function getCommonHeaders() {
 // Función genérica para peticiones a la API
 // Línea aproximada 23 en instagramApi.js
 async function apiRequest(endpoint, params = {}, method = "POST", customToken = null) {
-  console.log(`API Request to ${endpoint}:`, { params, method, customToken });
+  console.log(`API Request to ${endpoint}:`, { 
+    endpoint,
+    method,
+    hasCustomToken: !!customToken,
+    params: JSON.parse(JSON.stringify(params)) // Safe copy for logging
+  });
+  
+  // Log parameter details
+  if (params.usuarios) {
+    const usersList = params.usuarios.split(',');
+    console.log(`Request targets ${usersList.length} users:`, 
+      usersList.length <= 5 ? usersList : usersList.slice(0, 5).concat([`...and ${usersList.length - 5} more`])
+    );
+  }
+  
+  if (params.mensaje) {
+    console.log(`Message content (${params.mensaje.length} chars):`, 
+      params.mensaje.length <= 100 ? params.mensaje : params.mensaje.substring(0, 100) + "..."
+    );
+  }
+  
   // Cambiar FormData por URLSearchParams
   const urlParams = new URLSearchParams();
   
@@ -58,7 +78,10 @@ async function apiRequest(endpoint, params = {}, method = "POST", customToken = 
     }
     
     // Log headers right before the request
-    console.log("Request headers:", headers);
+    console.log("Request headers:", {
+      ...headers,
+      token: headers.token ? "Present (hidden for security)" : "Not present"
+    });
     
     const response = await fetch(`${API_BASE_URL}${endpoint}`, {
       method,
@@ -151,31 +174,96 @@ export const instagramApi = {
     return apiRequest("/seguir_usuarios", { usuarios: usersStr }, "POST", token);
   },
   
-  sendMessages: (users, message, skipExisting = false, token = null) => {
-    const usersStr = Array.isArray(users) ? users.join(",") : users;
-    return apiRequest("/enviar_mensajes_multiple", { 
-      usuarios: usersStr, 
-      mensaje: message,
-      skip_existing: skipExisting 
-    }, "POST", token);
-  },
+// In instagramApi.js
+sendMessages: (users, message, skipExisting = false, token = null) => {
+  const usersStr = Array.isArray(users) ? users.join(",") : users;
   
-  sendMedia: async (users, file, mediaType, message = "", skipExisting = false, token = null) => {
-    const usersStr = Array.isArray(users) ? users.join(",") : users;
-    
-    // Usar FormData para archivos
-    const formData = new FormData();
-    formData.append("usuarios", usersStr);
-    formData.append("file", file);
-    formData.append("media_type", mediaType);
-    formData.append("mensaje", message);
-    formData.append("skip_existing", skipExisting);
-    
-    // Petición especial para FormData
+  // Add debug logging
+  console.log("sendMessages API call with params:", {
+    users: Array.isArray(users) ? users : [users],
+    usersCount: Array.isArray(users) ? users.length : 1,
+    messageLength: message ? message.length : 0,
+    messageSample: message ? message.substring(0, 50) + (message.length > 50 ? "..." : "") : "NULL",
+    token: token ? "Present (starts with " + token.substring(0, 10) + "...)" : "Not provided"
+  });
+  
+  return apiRequest("/enviar_mensajes_multiple", { 
+    usuarios: usersStr, 
+    mensaje: message,
+    skip_existing: skipExisting 
+  }, "POST", token).then(response => {
+    console.log("sendMessages API response:", response);
+    return response;
+  }).catch(error => {
+    console.error("sendMessages API error:", error);
+    throw error;
+  });
+},
+  
+sendMedia: async (users, file, mediaType, message = "", skipExisting = false, token = null) => {
+  // Agregar más logs al inicio de la función
+  console.log("====== SEND MEDIA FUNCTION CALLED ======");
+  console.log("sendMedia called with:", {
+    users: Array.isArray(users) ? `${users.length} users` : "single user",
+    mediaType,
+    messageLength: message ? message.length : 0,
+    hasFile: !!file,
+    fileType: file ? file.type : null,
+    fileName: file ? file.name : null,
+    fileSize: file ? file.size : null,
+    skipExisting,
+    hasToken: !!token
+  });
+  console.log("Media request differs from messages:", {
+    usesDifferentEndpoint: true,
+    usesFormDataInsteadOfURLParams: true,
+    hasFileAttachment: true
+  });
+  
+  const usersStr = Array.isArray(users) ? users.join(",") : users;
+  
+  // Usar FormData para archivos
+  const formData = new FormData();
+  formData.append("usuarios", usersStr);
+  formData.append("file", file);
+  formData.append("media_type", mediaType);
+  formData.append("mensaje", message || ""); // Asegurar que siempre enviamos al menos una cadena vacía
+  formData.append("skip_existing", skipExisting);
+  // Verificar contenido del FormData
+for (let pair of formData.entries()) {
+  console.log(`FormData contains: ${pair[0]} = ${pair[1] instanceof File ? `File: ${pair[1].name}` : pair[1]}`);
+}
+
+  
   try {
     // Obtener headers y agregar token personalizado si existe
     const headers = getCommonHeaders();
-    if (token) headers["token"] = token;
+    
+    // Importante: asegurar que el token se use correctamente
+    if (token) {
+      headers["token"] = token;
+    } else if (headers.token) {
+      console.log("Using token from common headers");
+    } else {
+      console.warn("No token available for sendMedia request");
+    }
+    
+    // No incluir Content-Type en el header para permitir que el navegador establezca el boundary correcto
+    delete headers["Content-Type"];
+    
+    console.log("sendMedia request headers:", {
+      ...headers,
+      token: headers.token ? "Present (hidden for security)" : "Not present",
+      cookie: headers.Cookie ? "Present (hidden for security)" : "Not present"
+    });
+    console.log("Headers comparison:", {
+      messageHeaders: { ...headers, token: "hidden" },
+      contentType: headers['Content-Type'],
+      hasAuthToken: !!headers.token
+    });
+
+
+    console.log("sendMedia FormData keys:", [...formData.keys()]);
     
     const response = await fetch(`${API_BASE_URL}/enviar_media`, {
       method: "POST",
@@ -183,11 +271,45 @@ export const instagramApi = {
       body: formData
     });
     
+    console.log(`sendMedia response status:`, response.status);
+    
+    // Leer el texto de la respuesta
+    const responseText = await response.text();
+    console.log("sendMedia raw response:", responseText);
+    
+    let data;
+    try {
+      // Intentar parsear como JSON
+      data = JSON.parse(responseText);
+      console.log("sendMedia parsed response:", data);
+      console.log("Response details:", {
+      hasError: data.error !== undefined,
+      hasQueueId: data.queue_id !== undefined,
+      hasMessage: data.message !== undefined,
+      status: data.status,
+      additionalFields: Object.keys(data).filter(k => !['status', 'message', 'queue_id'].includes(k))
+    });
+      console.log("Full media response:", {
+      status: response.status,
+      headers: Object.fromEntries([...response.headers.entries()]),
+      body: data
+    });
+    } catch (jsonError) {
+      console.error("Error parsing sendMedia response as JSON:", jsonError);
+      // Si no es JSON, devolver un objeto con la respuesta raw
+      return {
+        status: "error",
+        message: "Invalid JSON response",
+        raw_response: responseText,
+        http_status: response.status
+      };
+    }
+    
     if (!response.ok) {
       throw new Error(`Error HTTP: ${response.status}`);
     }
     
-    return await response.json();
+    return data;
   } catch (error) {
     console.error(`Error en envío de media:`, error);
     throw error;
