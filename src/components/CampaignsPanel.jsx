@@ -400,8 +400,7 @@ const CampaignsPanel = ({ user, onRefreshStats, onCreateCampaign }) => {
                     {statusBadge.text}
                   </span>
                   
-                  {/* Botón de settings - Solo visible para campañas activas */}
-                  {campaign.status === 'processing' && (
+                    {/* Botón de settings - Visible para todas las campañas */}
                     <button 
                       onClick={(e) => openDetailsModal(campaign, e)}
                       className="ml-4 text-gray-400 bg-transparent border-0 p-0"
@@ -413,7 +412,6 @@ const CampaignsPanel = ({ user, onRefreshStats, onCreateCampaign }) => {
                         className="w-12 h-12"
                       />
                     </button>
-                  )}
                 </div>
               </div>
             );
