@@ -1,19 +1,64 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import PropTypes from 'prop-types';
 import { FaRegBell } from 'react-icons/fa';
 import { AreaChart, Area, XAxis, LineChart, Line, ResponsiveContainer, Tooltip } from 'recharts';
+import { getActiveCampaigns } from '../campaignStore';
+import { getCampaignTypeName, calculateCampaignElapsedTime, estimateRemainingTime } from '../campaignIntegration';
 
 const HomeDashboard = ({ user }) => {
-  // Datos estáticos para mostrar en los gráficos
-  const sampleCampaign = {
-    name: "Influencers Fitness",
-    action: "Enviar Mensajes",
-    status: "Activa",
-    chartData: {
-      days: ["Lun", "Mar", "Mie", "Jue", "Vie", "Sab"],
-      values: [15, 35, 80, 30, 65, 75]
-    }
-  };
+  const [activeCampaign, setActiveCampaign] = useState(null);
+  const [loading, setLoading] = useState(false);
+  
+  // Cargar la campaña activa más reciente al montar el componente
+  useEffect(() => {
+    const fetchActiveCampaign = async () => {
+      if (!user?.uid) return;
+      
+      try {
+        setLoading(true);
+        const campaigns = await getActiveCampaigns(user.uid);
+        
+        if (campaigns.length > 0) {
+          // Ordenar por fecha de creación (la más reciente primero)
+          const sorted = campaigns.sort((a, b) => b.createdAt - a.createdAt);
+          
+          // Generar datos de gráfico basados en el progreso
+          const campaign = sorted[0];
+          
+          // Crear datos de visualización para el gráfico
+          // Simular datos de progreso diario basados en la tasa de procesamiento
+          const days = ["Lun", "Mar", "Mie", "Jue", "Vie", "Sab"];
+          
+          // Calcular valores basados en el progreso actual y la tasa de procesamiento
+          const baseValue = Math.ceil(campaign.targetCount / 6);
+          const values = [
+            Math.round(baseValue * 0.2),
+            Math.round(baseValue * 0.5),
+            Math.round(baseValue * 1.1),
+            Math.round(baseValue * 0.4),
+            Math.round(baseValue * 0.9),
+            Math.round(campaign.progress / 100 * campaign.targetCount)
+          ];
+          
+          setActiveCampaign({
+            ...campaign,
+            action: getCampaignTypeName(campaign.campaignType),
+            status: "Activa",
+            chartData: {
+              days,
+              values
+            }
+          });
+        }
+      } catch (error) {
+        console.error("Error al cargar campañas activas:", error);
+      } finally {
+        setLoading(false);
+      }
+    };
+    
+    fetchActiveCampaign();
+  }, [user]);
 
   const totalInteractions = 35765;
   
@@ -39,10 +84,12 @@ const HomeDashboard = ({ user }) => {
   ];
 
   const renderLineChart = () => {
+    if (!activeCampaign?.chartData) return null;
+    
     // Crear un conjunto de datos más denso para una curva más suave
     const data = [];
-    const days = sampleCampaign.chartData.days;
-    const values = sampleCampaign.chartData.values;
+    const days = activeCampaign.chartData.days;
+    const values = activeCampaign.chartData.values;
     
     // Añadir puntos interpolados entre días para suavizar la curva
     for (let i = 0; i < days.length; i++) {
@@ -305,45 +352,65 @@ const HomeDashboard = ({ user }) => {
         <h1 className="text-2xl font-medium text-black">Bienvenido a Prospecthor IA</h1>
       </div>
 
-      {/* Campañas activas */}
       <div className="bg-white p-4 rounded-xl shadow-sm mb-6">
-        <div className="flex justify-between items-center">
-          <h2 className="text-xl font-medium text-black">Campañas activas</h2>
-          <button className="bg-white text-gray-500 px-3 py-1 rounded-lg border border-gray-200 text-sm">
-            Ver todo
-          </button>
-        </div>
+  <div className="flex justify-between items-center">
+    <h2 className="text-xl font-medium text-black">Campañas activas</h2>
+    <button className="bg-white text-gray-500 px-3 py-1 rounded-lg border border-gray-200 text-sm">
+      Ver todo
+    </button>
+  </div>
 
-        <div className="bg-white border border-gray-100 rounded-xl p-4 mt-4 shadow-sm">
-          <div className="flex justify-between">
-            <div className="flex items-center gap-3">
-            <div className="w-12 h-12 relative flex items-center justify-center">
+  {loading ? (
+    <div className="flex justify-center items-center p-8">
+      <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-indigo-600"></div>
+      <span className="ml-2 text-gray-600">Cargando campañas...</span>
+    </div>
+  ) : activeCampaign ? (
+    <div className="bg-white border border-gray-100 rounded-xl p-4 mt-4 shadow-sm">
+      <div className="flex justify-between">
+        <div className="flex items-center gap-3">
+          <div className="w-12 h-12 relative flex items-center justify-center">
+            <img src="/assets/rectangleDark.png" alt="Background" className="w-full h-full absolute top-0 left-0"/>
             <img 
-                src="/assets/rectangleDark.png" 
-                alt="Background" 
-                className="w-full h-full absolute top-0 left-0"
+              src={
+                activeCampaign.campaignType === "send_messages" ? "/assets/messages-2.png" :
+                activeCampaign.campaignType === "send_media" ? "/assets/gallery.png" :
+                activeCampaign.campaignType === "follow_users" ? "/assets/user-plus.png" :
+                "/assets/messages-2.png"
+              } 
+              alt="Campaign Icon" 
+              className="w-8 h-8 relative z-10 brightness-0 invert"
             />
-            <img 
-                src="/assets/messages-2.png" 
-                alt="Messages Icon" 
-                className="w-8 h-8 relative z-10"
-            />
-            </div>
-              <div>
-              <div className="font-semibold text-black">{sampleCampaign.name}</div>
-                <div className="text-sm text-gray-400">{sampleCampaign.action}</div>
-              </div>
-            </div>
-            <div>
-              <span className="bg-green-100 text-black px-3 py-1 rounded-full text-sm">
-                {sampleCampaign.status}
-              </span>
-            </div>
           </div>
-
-          {renderLineChart()}
+          <div>
+            <div className="font-semibold text-black">{activeCampaign.name}</div>
+            <div className="text-sm text-gray-400">{activeCampaign.action}</div>
+          </div>
+        </div>
+        <div className="flex flex-col items-end gap-1">
+          <span className="bg-green-100 text-black px-3 py-1 rounded-full text-sm">
+            {activeCampaign.status}
+          </span>
+          <span className="text-xs text-gray-500">
+            {activeCampaign.progress}% completado
+          </span>
         </div>
       </div>
+
+      {renderLineChart()}
+    </div>
+  ) : (
+    <div className="p-8 text-center bg-gray-50 rounded-xl mt-4">
+      <p className="text-gray-500">No hay campañas activas en este momento.</p>
+      <button 
+        className="mt-3 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700"
+        onClick={() => window.location.href = "/campaigns"}
+      >
+        Crear nueva campaña
+      </button>
+    </div>
+  )}
+</div>
 
       {/* Stats Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6">

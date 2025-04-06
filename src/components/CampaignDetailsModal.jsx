@@ -166,7 +166,7 @@ const CampaignDetailsModal = ({ campaignId, userId, isOpen, onClose, onDelete })
                   <span className="font-medium text-gray-700">Progreso:</span>
                   <span className="text-black">{campaign.progress || 0}%</span>
                 </div>
-                <div className="w-full bg-gray-200 rounded-full h-2.5">
+                <div className="w-full bg-gray-200 rounded-full h-2.5 mb-2">
                   <div 
                     className={`h-2.5 rounded-full ${
                       campaign.status === 'processing' ? 'bg-indigo-600' :
@@ -177,6 +177,35 @@ const CampaignDetailsModal = ({ campaignId, userId, isOpen, onClose, onDelete })
                     style={{ width: `${campaign.progress || 0}%` }}
                   ></div>
                 </div>
+                
+                {campaign.status === 'processing' && (
+                  <div className="mt-3 text-sm">
+                    <div className="flex justify-between mb-1">
+                      <span className="text-gray-600">Tasa de procesamiento:</span>
+                      <span className="text-black font-medium">{campaign.processingRatePerHour || 3} ops/hora</span>
+                    </div>
+                    
+                    {campaign.estimatedCompletionTime && (
+                      <div className="flex justify-between">
+                        <span className="text-gray-600">Finalización estimada:</span>
+                        <span className="text-black font-medium">
+                          {formatDate(campaign.estimatedCompletionTime)}
+                        </span>
+                      </div>
+                    )}
+                    
+                    {campaign.estimatedCompletionHours !== undefined && (
+                      <div className="flex justify-between">
+                        <span className="text-gray-600">Duración estimada:</span>
+                        <span className="text-black font-medium">
+                          {campaign.estimatedCompletionHours === 1 
+                            ? '~1 hora' 
+                            : `~${campaign.estimatedCompletionHours} horas`}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
               
               {/* Usuarios */}

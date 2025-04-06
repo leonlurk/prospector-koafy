@@ -380,18 +380,35 @@ const CampaignsPanel = ({ user, onRefreshStats, onCreateCampaign }) => {
                       className="w-8 h-8 brightness-0 invert" 
                     />
                   </div>
-                  <div className="ml-4">
+                  <div className="ml-4 flex-grow">
                     <h3 className="font-medium text-lg text-black">
                       {campaign.name || "Campaña sin nombre"}
                     </h3>
-                    <p className="text-sm text-gray-500">
-                      {campaign.status === 'processing' ? 'En proceso' : 
-                      campaign.status === 'paused' ? 'En pausa' : 
-                      campaign.status === 'completed' ? 'Completada' : 
-                      campaign.status === 'cancelled' ? 'Cancelada' : 
-                      campaign.status === 'failed' ? 'Fallida' : 'Estado desconocido'}
-                    </p>
-                  </div>
+                    <div className="flex items-center">
+                      <p className="text-sm text-gray-500 mr-3">
+                        {campaign.status === 'processing' ? 'En proceso' : 
+                        campaign.status === 'paused' ? 'En pausa' : 
+                        campaign.status === 'completed' ? 'Completada' : 
+                        campaign.status === 'cancelled' ? 'Cancelada' : 
+                        campaign.status === 'failed' ? 'Fallida' : 'Estado desconocido'}
+                      </p>
+                      
+                      {campaign.status === 'processing' && (
+                        <div className="text-xs text-indigo-600">
+                          {campaign.targetCount && `${campaign.totalProcessed || 0}/${campaign.targetCount} usuarios procesados`}
+                        </div>
+                      )}
+                    </div>
+  
+  {campaign.status === 'processing' && (
+    <div className="mt-1 w-full bg-gray-200 rounded-full h-1.5">
+      <div 
+        className="h-1.5 rounded-full bg-indigo-600"
+        style={{ width: `${campaign.progress || 0}%` }}
+      ></div>
+    </div>
+  )}
+</div>
                 </div>
 
                 {/* Estado y menú */}

@@ -18,19 +18,47 @@ export const createCampaignOptions = (options = {}) => {
     fileName,
     templateName,
     postLink,
+    processingRate, // Nueva opción para tasa personalizada
   } = options;
 
+  // Determinar tasa de procesamiento según el tipo de campaña
+  let ratePerHour;
+  
+  switch (type) {
+    case "send_messages":
+    case "send_media":
+      ratePerHour = 3; // 3 mensajes por hora
+      break;
+    case "follow_users":
+      ratePerHour = 10; // 10 seguimientos por hora
+      break;
+    default:
+      ratePerHour = 3; // Valor por defecto
+  }
+  
+  // Usar tasa personalizada si se proporciona
+  if (processingRate && typeof processingRate === 'number' && processingRate > 0) {
+    ratePerHour = processingRate;
+  }
+  
+  // Calcular tiempo estimado total en horas
+  const estimatedHours = Math.ceil(users.length / ratePerHour);
+  
   // Datos base de campaña
   const campaignData = {
     name: name || `${type} - ${new Date().toLocaleString()}`,
     campaignType: type,
     targetUsers: users,
     targetCount: users.length,
+    originalTargetCount: users.length, // Añadido para seguimiento de filtrados
     endpoint: endpoint,
     createdAt: new Date(),
     status: "processing",
     progress: 0,
     totalProcessed: 0,
+    processingRatePerHour: ratePerHour,
+    estimatedCompletionHours: estimatedHours,
+    estimatedCompletionTime: new Date(Date.now() + (estimatedHours * 60 * 60 * 1000)),
   };
 
   // Añadir datos específicos según el tipo
@@ -75,8 +103,8 @@ export const startCampaignMonitoring = (userId, campaignId, options = {}) => {
   const { 
     token,
     initialDelay = 5000, // Esperar 5 segundos antes del primer check
-    checkInterval = 15000, // Verificar cada 15 segundos
-    maxChecks = 20, // Máximo número de verificaciones
+    checkInterval = 60000, // Verificar cada 60 segundos (aumentado para evitar demasiadas solicitudes)
+    maxChecks = 200, // Aumentado significativamente para campañas largas (hasta ~3 horas)
   } = options;
 
   let checkCount = 0;
@@ -138,8 +166,14 @@ export const startCampaignMonitoring = (userId, campaignId, options = {}) => {
  */
 async function checkCampaignStatus(userId, campaignId, token) {
   try {
-    // Obtener la campaña actual
-    // TODO: Idealmente usar una función de la API para verificar el estado específico de la campaña
+    // Obtener la campaña actual para conocer sus detalles
+    const campaign = await getCampaignDetails(userId, campaignId);
+    if (!campaign) {
+      console.error("No se pudo encontrar la campaña:", campaignId);
+      return true; // Seguir monitoreando hasta que podamos obtener más información
+    }
+
+    // Verificar el estado actual de la API
     const response = await fetch(`${API_BASE_URL}/usage_stats`, {
       method: "GET",
       headers: {
@@ -152,17 +186,9 @@ async function checkCampaignStatus(userId, campaignId, token) {
     }
 
     const data = await response.json();
-    
-    // Actualizar campaña según respuesta
-    // Esto es una estimación ya que la API actual no proporciona datos exactos de progreso
-    // por cada campaña. En un sistema ideal, la API debería tener un endpoint específico.
-    // const activityLevel = data.activity_level || "normal"; // No lo usamos por ahora
     const blockStatus = data.block_status || null;
     
-    // Si hay un proceso en curso, suponemos que está relacionado con esta campaña
-    const hasActiveProcesses = data.active_processes && data.active_processes.length > 0;
-    
-    // Si hay bloqueos, actualizamos la campaña
+    // Si hay bloqueos, actualizamos la campaña como fallida
     if (blockStatus) {
       await updateCampaign(userId, campaignId, {
         status: "failed",
@@ -173,15 +199,61 @@ async function checkCampaignStatus(userId, campaignId, token) {
       return false; // No seguir verificando
     }
     
-    // Si no hay procesos activos, asumimos que la campaña terminó
-    if (!hasActiveProcesses) {
-      // Verificar si hay estadísticas disponibles
-      let totalProcessed = 0;
+    const now = new Date();
+    const startTime = campaign.createdAt instanceof Date 
+      ? campaign.createdAt 
+      : new Date(campaign.createdAt);
+    const elapsedMs = now - startTime;
+    
+    // Obtener recuento de usuarios y verificar si hay filtrados
+    const originalTargetCount = campaign.originalTargetCount || campaign.targetCount || (campaign.targetUsers?.length || 0);
+    let targetCount = originalTargetCount;
+    
+    // Si tenemos información de usuarios filtrados, ajustar el recuento
+    if (campaign.filteredUsers !== undefined) {
+      // Restar los usuarios filtrados del total
+      targetCount = Math.max(0, originalTargetCount - campaign.filteredUsers);
       
+      // Actualizar el targetCount en la campaña si ha cambiado
+      if (campaign.targetCount !== targetCount) {
+        await updateCampaign(userId, campaignId, {
+          targetCount: targetCount,
+          // Guardar el recuento original si no existe
+          originalTargetCount: campaign.originalTargetCount || originalTargetCount
+        });
+      }
+    }
+    
+    // Determinar la tasa de procesamiento según el tipo de campaña
+    let ratePerHour = 3; // Por defecto: 3 operaciones por hora
+    
+    switch (campaign.campaignType) {
+      case "send_messages":
+      case "send_media":
+        ratePerHour = 3; // 3 mensajes por hora
+        break;
+      case "follow_users":
+        ratePerHour = 10; // Ejemplo: 10 seguimientos por hora
+        break;
+      default:
+        ratePerHour = 3; // Valor por defecto para otros tipos
+    }
+    
+    // Calcular la duración total estimada en milisegundos
+    // Math.ceil para redondear hacia arriba, asegurando que no terminemos antes de tiempo
+    const hoursNeeded = Math.ceil(targetCount / ratePerHour);
+    const estimatedDurationMs = hoursNeeded * 60 * 60 * 1000 + (5 * 60 * 1000); // Horas a ms + 5 min de margen
+    
+    // Verificar si ya pasó el tiempo estimado para considerar la campaña como completada
+    if (elapsedMs >= estimatedDurationMs) {
+      // El tiempo estimado ha transcurrido, marcar como completada
+      let totalProcessed = targetCount; // Asumimos que todos fueron procesados
+      
+      // Si hay estadísticas disponibles, usarlas
       if (data.message && data.message.day && data.message.day.current) {
-        totalProcessed = data.message.day.current;
+        totalProcessed = Math.min(targetCount, data.message.day.current);
       } else if (data.follow && data.follow.day && data.follow.day.current) {
-        totalProcessed = data.follow.day.current;
+        totalProcessed = Math.min(targetCount, data.follow.day.current);
       }
       
       await updateCampaign(userId, campaignId, {
@@ -193,29 +265,17 @@ async function checkCampaignStatus(userId, campaignId, token) {
       return false; // No seguir verificando
     }
     
-    // Si todavía hay procesos activos, actualizar el progreso (estimación)
-    // Como no tenemos datos exactos, hacemos una estimación basada en el tiempo transcurrido
-    // En una implementación real, la API debería proporcionar datos de progreso precisos
-    const campaign = await getCampaignDetails(userId, campaignId);
-    if (campaign) {
-      const startTime = campaign.createdAt;
-      const now = new Date();
-      const elapsedMs = now - startTime;
-      
-      // Estimamos que una operación típica toma unos 5 minutos (300000ms)
-      // Ajustar este valor según las características reales de la API
-      const estimatedDuration = 300000; 
-      
-      // Calculamos progreso en base al tiempo transcurrido, máximo 95%
-      // (el 100% solo cuando se confirma finalización)
-      const estimatedProgress = Math.min(95, Math.round((elapsedMs / estimatedDuration) * 100));
-      
-      await updateCampaign(userId, campaignId, {
-        progress: estimatedProgress,
-        // Estimar procesados en base al progreso y el total objetivo
-        totalProcessed: Math.round((estimatedProgress / 100) * campaign.targetCount)
-      });
-    }
+    // La campaña sigue en proceso, actualizar el progreso basado en el tiempo transcurrido
+    const progressPercentage = Math.min(95, Math.round((elapsedMs / estimatedDurationMs) * 100));
+    const estimatedProcessed = Math.round((progressPercentage / 100) * targetCount);
+    
+    await updateCampaign(userId, campaignId, {
+      progress: progressPercentage,
+      totalProcessed: estimatedProcessed
+    });
+    
+    // Registrar información de seguimiento
+    console.log(`Campaña ${campaignId} en progreso: ${progressPercentage}%. Tiempo transcurrido: ${formatElapsedTime(startTime)}. Tiempo estimado total: ${formatElapsedTime(startTime, new Date(startTime.getTime() + estimatedDurationMs))}`);
     
     // Devolver true para seguir monitoreando
     return true;
@@ -281,7 +341,7 @@ export const formatElapsedTime = (startDate, endDate = new Date()) => {
   const start = startDate instanceof Date ? startDate : new Date(startDate);
   const end = endDate instanceof Date ? endDate : new Date(endDate);
   
-  const elapsed = Math.floor((end - start) / 1000); // segundos
+  const elapsed = Math.max(0, Math.floor((end - start) / 1000)); // segundos (nunca negativo)
   
   if (elapsed < 60) return `${elapsed} segundo${elapsed !== 1 ? 's' : ''}`;
   
@@ -291,8 +351,12 @@ export const formatElapsedTime = (startDate, endDate = new Date()) => {
   const hours = Math.floor(minutes / 60);
   const remainingMinutes = minutes % 60;
   
-  return `${hours} hora${hours !== 1 ? 's' : ''} ${remainingMinutes} minuto${remainingMinutes !== 1 ? 's' : ''}`;
-};
+  if (remainingMinutes === 0) {
+    return `${hours} hora${hours !== 1 ? 's' : ''}`;
+  } else {
+    return `${hours} hora${hours !== 1 ? 's' : ''} ${remainingMinutes} minuto${remainingMinutes !== 1 ? 's' : ''}`;
+  }
+}
 
 /**
  * Obtiene el nombre descriptivo para un tipo de campaña
@@ -314,28 +378,84 @@ export const getCampaignTypeName = (type) => {
  * @returns {string} - Tiempo restante estimado formateado
  */
 export const estimateRemainingTime = (campaign) => {
-  if (!campaign || !campaign.createdAt || !campaign.progress) {
+  if (!campaign || !campaign.createdAt) {
     return "Calculando...";
   }
   
   // Si está casi completo, estimamos que quedan 30 segundos
-  if (campaign.progress >= 90) {
+  if (campaign.progress >= 95) {
     return "< 1 minuto";
   }
   
-  const elapsedTime = calculateCampaignElapsedTime(campaign);
+  // Determinar tasa de procesamiento basada en el tipo de campaña
+  let ratePerHour = 3; // Por defecto: 3 operaciones por hora
   
-  // Regla de tres simple: si para el x% del progreso se tomó y tiempo,
-  // para el 100% se tomará (y * 100 / x) tiempo
-  const totalEstimatedMs = (elapsedTime.ms * 100) / campaign.progress;
-  const remainingMs = totalEstimatedMs - elapsedTime.ms;
+  switch (campaign.campaignType) {
+    case "send_messages":
+    case "send_media":
+      ratePerHour = 3; // 3 mensajes por hora
+      break;
+    case "follow_users":
+      ratePerHour = 10; // Ejemplo: 10 seguimientos por hora
+      break;
+    default:
+      ratePerHour = 3; // Valor por defecto para otros tipos
+  }
   
+  // Obtener el tiempo transcurrido
+  const now = new Date();
+  const start = campaign.createdAt instanceof Date 
+    ? campaign.createdAt 
+    : new Date(campaign.createdAt);
+  const elapsedMs = now - start;
+  
+  // Calcular tiempo total estimado basado en la cantidad de usuarios
+  const originalCount = campaign.originalTargetCount || (campaign.targetUsers?.length || campaign.targetCount || 0);
+  const filteredCount = campaign.filteredUsers || 0;
+  const targetCount = Math.max(0, originalCount - filteredCount);
+  const hoursNeeded = Math.ceil(targetCount / ratePerHour);
+  const totalEstimatedMs = hoursNeeded * 60 * 60 * 1000; // Horas a ms
+  
+  // Calcular tiempo restante
+  const remainingMs = Math.max(0, totalEstimatedMs - elapsedMs);
   const remainingMinutes = Math.ceil(remainingMs / 60000);
   
+  // Formatear el tiempo restante
   if (remainingMinutes < 1) return "< 1 minuto";
   if (remainingMinutes === 1) return "~1 minuto";
   if (remainingMinutes < 60) return `~${remainingMinutes} minutos`;
   
   const hours = Math.floor(remainingMinutes / 60);
-  return `~${hours} hora${hours !== 1 ? 's' : ''}`;
-};
+  const mins = remainingMinutes % 60;
+  
+  if (mins === 0) {
+    return `~${hours} hora${hours !== 1 ? 's' : ''}`;
+  } else {
+    return `~${hours} hora${hours !== 1 ? 's' : ''} y ${mins} minuto${mins !== 1 ? 's' : ''}`;
+  }
+}
+
+/**
+ * Calcula y devuelve la hora estimada de finalización de una campaña
+ * @param {Object} campaign - Objeto de la campaña
+ * @returns {Date|null} - Fecha estimada de finalización o null si no se puede calcular
+ */
+export const calculateEstimatedCompletionTime = (campaign) => {
+  if (!campaign || !campaign.createdAt) return null;
+  
+  // Determinar tasa de procesamiento basada en el tipo
+  let ratePerHour = campaign.processingRatePerHour || 3;
+  
+  // Considerar usuarios filtrados
+  const originalCount = campaign.originalTargetCount || campaign.targetCount || 0;
+  const filteredCount = campaign.filteredUsers || 0;
+  const targetCount = Math.max(0, originalCount - filteredCount);
+  
+  const hoursNeeded = Math.ceil(targetCount / ratePerHour);
+  
+  const startTime = campaign.createdAt instanceof Date 
+    ? campaign.createdAt 
+    : new Date(campaign.createdAt);
+  
+  return new Date(startTime.getTime() + (hoursNeeded * 60 * 60 * 1000));
+}

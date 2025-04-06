@@ -433,7 +433,7 @@ const ConnectInstagram = ({
 
                   <input
                     type="email"
-                    placeholder="Correo de Instagram"
+                    placeholder="Usuario de Instagram"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     className="w-full p-2 md:p-3 border border-[#A6A6A6] rounded-md mb-3 text-[#393346] placeholder-gray-400 bg-white focus:outline-none focus:ring-1 focus:ring-[#5468FF] text-sm md:text-base"
@@ -459,9 +459,8 @@ const ConnectInstagram = ({
                       htmlFor="prospectar"
                       className="text-xs md:text-sm text-black cursor-pointer"
                     >
-                      Aceptar términos y condiciones y políticas de privacidad en el inicio de sesión
-                      de instagram. Los términos y condiciones y políticas de privacidad se vean en la
-                      misma pagina.
+                      Aceptar términos y condiciones y políticas de privacidad para el inicio de sesión
+                      de instagram.
                     </label>
                   </div>
                   {!acceptedTerms && (
