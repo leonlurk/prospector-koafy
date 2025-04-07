@@ -2,8 +2,6 @@ import { useState, useEffect, useCallback } from "react";
 import PropTypes from 'prop-types';
 import { getActiveCampaigns, getRecentCampaigns, cancelCampaign } from "../campaignStore";
 import logApiRequest from "../requestLogger";
-import { collection, getDocs } from "firebase/firestore";
-import { db } from "../firebaseConfig";
 import CampaignDetailsModal from "./CampaignDetailsModal";
 
 const CampaignsPanel = ({ user, onRefreshStats, onCreateCampaign }) => {
@@ -264,13 +262,13 @@ const CampaignsPanel = ({ user, onRefreshStats, onCreateCampaign }) => {
   }
 
   // Definir una clase común para los botones
-  const buttonClass = "bg-white text-black py-4 px-6 rounded-full border border-gray-200 flex items-center gap-2 h-16 text-lg";
-  const menuItemClass = "block w-full text-left px-5 py-3 text-black text-lg hover:bg-gray-50";
+  const buttonClass = "bg-white text-black py-2 px-3 sm:py-3 sm:px-4 md:py-4 md:px-6 rounded-full border border-gray-200 flex items-center gap-1 sm:gap-2 h-12 sm:h-14 md:h-16 text-sm sm:text-base md:text-lg whitespace-nowrap";
+  const menuItemClass = "block w-full text-left px-3 sm:px-5 py-2 sm:py-3 text-black text-sm sm:text-base md:text-lg hover:bg-gray-50";
 
   return (
     <div className="w-full bg-[#edf0ff] min-h-screen">
       {/* Botones de filtro y acción */}
-      <div className="flex space-x-4 mb-8 px-5 pt-6">
+      <div className="flex flex-wrap gap-3 mb-6 px-3 sm:px-5 pt-4 sm:pt-6">
         {/* Nueva Campaña button */}
         <button 
           className={buttonClass}
@@ -283,7 +281,7 @@ const CampaignsPanel = ({ user, onRefreshStats, onCreateCampaign }) => {
             }
           }}
         >
-          <img src="/assets/add-square.png" alt="Add" className="w-6 h-6" />
+          <img src="/assets/add-square.png" alt="Add" className="w-4 h-4 sm:w-5 sm:h-5 md:w-6 md:h-6" />
           <span>Nueva Campaña</span>
         </button>
         
@@ -295,7 +293,7 @@ const CampaignsPanel = ({ user, onRefreshStats, onCreateCampaign }) => {
           >
             <span>{selectedEstado}</span>
             <svg 
-              className={`w-5 h-5 ml-2 transition-transform duration-200 ${dropdownState.estado ? 'rotate-180' : ''}`} 
+              className={`w-4 h-4 sm:w-5 sm:h-5 ml-1 sm:ml-2 transition-transform duration-200 ${dropdownState.estado ? 'rotate-180' : ''}`} 
               fill="none" 
               stroke="currentColor" 
               viewBox="0 0 24 24" 
@@ -306,11 +304,11 @@ const CampaignsPanel = ({ user, onRefreshStats, onCreateCampaign }) => {
           </button>
           
           {dropdownState.estado && (
-            <div className="absolute top-full left-0 mt-2 w-64 rounded-lg z-20 py-2">
+            <div className="absolute top-full left-0 mt-1 w-48 sm:w-56 md:w-64 rounded-lg z-20 py-1 sm:py-2 bg-white shadow-lg">
               {estadoOptions.map((option) => (
                 <button
                   key={option}
-                  className="block w-full text-left px-5 py-3 text-black bg-white text-lg hover:bg-gray-200 whitespace-nowrap"
+                  className="block w-full text-left px-3 sm:px-5 py-2 sm:py-3 text-black text-sm sm:text-base md:text-lg hover:bg-gray-200 whitespace-nowrap"
                   onClick={(e) => selectOption('estado', option, e)}
                 >
                   {option}
@@ -328,7 +326,7 @@ const CampaignsPanel = ({ user, onRefreshStats, onCreateCampaign }) => {
           >
             <span>{selectedTipo}</span>
             <svg 
-              className={`w-5 h-5 ml-2 transition-transform duration-200 ${dropdownState.tipo ? 'rotate-180' : ''}`} 
+              className={`w-4 h-4 sm:w-5 sm:h-5 ml-1 sm:ml-2 transition-transform duration-200 ${dropdownState.tipo ? 'rotate-180' : ''}`} 
               fill="none" 
               stroke="currentColor" 
               viewBox="0 0 24 24" 
@@ -339,11 +337,11 @@ const CampaignsPanel = ({ user, onRefreshStats, onCreateCampaign }) => {
           </button>
           
           {dropdownState.tipo && (
-            <div className="absolute top-full left-0 mt-2 w-64 rounded-lg z-20 py-2">
+            <div className="absolute top-full left-0 mt-1 w-48 sm:w-56 md:w-64 rounded-lg z-20 py-1 sm:py-2 bg-white shadow-lg">
               {tipoOptions.map((option) => (
                 <button
                   key={option}
-                  className="block w-full text-left px-5 py-3 bg-white text-black text-lg hover:bg-gray-200 whitespace-nowrap"
+                  className="block w-full text-left px-3 sm:px-5 py-2 sm:py-3 text-black text-sm sm:text-base md:text-lg hover:bg-gray-200 whitespace-nowrap"
                   onClick={(e) => selectOption('tipo', option, e)}
                 >
                   {option}
@@ -355,9 +353,9 @@ const CampaignsPanel = ({ user, onRefreshStats, onCreateCampaign }) => {
       </div>
 
       {/* Lista de campañas */}
-      <div className="space-y-5 px-5">
+      <div className="space-y-3 sm:space-y-4 md:space-y-5 px-3 sm:px-5">
         {filteredCampaigns.length === 0 ? (
-          <div className="text-center py-8 bg-white rounded-lg">
+          <div className="text-center py-6 sm:py-8 bg-white rounded-lg">
             <p className="text-gray-500">No hay campañas que coincidan con el filtro seleccionado.</p>
           </div>
         ) : (
@@ -369,23 +367,23 @@ const CampaignsPanel = ({ user, onRefreshStats, onCreateCampaign }) => {
             return (
               <div 
                 key={campaign.id}
-                className="bg-white rounded-lg overflow-hidden flex items-center justify-between p-5"
+                className="bg-white rounded-lg overflow-hidden flex flex-col sm:flex-row items-start sm:items-center justify-between p-3 sm:p-4 md:p-5"
               >
                 {/* Icono y nombre de campaña */}
-                <div className="flex items-center">
-                  <div className="w-12 h-12 bg-black rounded-lg flex items-center justify-center">
+                <div className="flex items-center w-full sm:w-auto">
+                  <div className="w-10 h-10 sm:w-12 sm:h-12 bg-black rounded-lg flex items-center justify-center">
                     <img 
                       src="/assets/messages-2.png" 
                       alt="Mensajes" 
-                      className="w-8 h-8 brightness-0 invert" 
+                      className="w-6 h-6 sm:w-8 sm:h-8 brightness-0 invert" 
                     />
                   </div>
-                  <div className="ml-4 flex-grow">
-                    <h3 className="font-medium text-lg text-black">
+                  <div className="ml-3 sm:ml-4 flex-grow">
+                    <h3 className="font-medium text-base sm:text-lg text-black">
                       {campaign.name || "Campaña sin nombre"}
                     </h3>
-                    <div className="flex items-center">
-                      <p className="text-sm text-gray-500 mr-3">
+                    <div className="flex items-center flex-wrap">
+                      <p className="text-xs sm:text-sm text-gray-500 mr-2 sm:mr-3">
                         {campaign.status === 'processing' ? 'En proceso' : 
                         campaign.status === 'paused' ? 'En pausa' : 
                         campaign.status === 'completed' ? 'Completada' : 
@@ -400,35 +398,35 @@ const CampaignsPanel = ({ user, onRefreshStats, onCreateCampaign }) => {
                       )}
                     </div>
   
-  {campaign.status === 'processing' && (
-    <div className="mt-1 w-full bg-gray-200 rounded-full h-1.5">
-      <div 
-        className="h-1.5 rounded-full bg-indigo-600"
-        style={{ width: `${campaign.progress || 0}%` }}
-      ></div>
-    </div>
-  )}
-</div>
+                    {campaign.status === 'processing' && (
+                      <div className="mt-1 w-full bg-gray-200 rounded-full h-1.5">
+                        <div 
+                          className="h-1.5 rounded-full bg-indigo-600"
+                          style={{ width: `${campaign.progress || 0}%` }}
+                        ></div>
+                      </div>
+                    )}
+                  </div>
                 </div>
 
                 {/* Estado y menú */}
-                <div className="flex items-center">
-                  <span className={`px-8 py-3 rounded-full text-sm font-medium ${statusBadge.className}`}>
+                <div className="flex items-center mt-3 sm:mt-0 w-full sm:w-auto justify-between sm:justify-end">
+                  <span className={`px-4 sm:px-6 md:px-8 py-2 sm:py-3 rounded-full text-xs sm:text-sm font-medium ${statusBadge.className}`}>
                     {statusBadge.text}
                   </span>
                   
-                    {/* Botón de settings - Visible para todas las campañas */}
-                    <button 
-                      onClick={(e) => openDetailsModal(campaign, e)}
-                      className="ml-4 text-gray-400 bg-transparent border-0 p-0"
-                      title="Ver detalles de la campaña"
-                    >
-                      <img
-                        src="/assets/setting-5.png"
-                        alt="Opciones"
-                        className="w-12 h-12"
-                      />
-                    </button>
+                  {/* Botón de settings - Visible para todas las campañas */}
+                  <button 
+                    onClick={(e) => openDetailsModal(campaign, e)}
+                    className="ml-2 sm:ml-4 text-gray-400 bg-transparent border-0 p-0"
+                    title="Ver detalles de la campaña"
+                  >
+                    <img
+                      src="/assets/setting-5.png"
+                      alt="Opciones"
+                      className="w-8 h-8 sm:w-10 sm:h-10 md:w-12 md:h-12"
+                    />
+                  </button>
                 </div>
               </div>
             );
@@ -457,5 +455,3 @@ CampaignsPanel.propTypes = {
 };
 
 export default CampaignsPanel;
-                  
-                
