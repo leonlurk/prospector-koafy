@@ -349,7 +349,7 @@ const HomeDashboard = ({ user }) => {
       {/* Encabezado con saludo */}
       <div className="mb-6">
         <h2 className="text-lg text-gray-600 font-normal">Hola {user?.username || "Usuario"},</h2>
-        <h1 className="text-2xl font-medium text-black">Bienvenido a Prospecthor IA</h1>
+        <h1 className="text-2xl font-medium text-black">Bienvenido a Tribe IA</h1>
       </div>
 
       <div className="bg-white p-4 rounded-xl shadow-sm mb-6">

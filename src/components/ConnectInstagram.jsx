@@ -355,8 +355,7 @@ const ConnectInstagram = ({
   {/* Contenido centrado */}
   <div className="flex-grow flex flex-col items-center justify-center">
     <div className="text-center mb-8">
-      <h2 className="text-2xl font-bold text-[#5468FF] mb-2">¡Comienza a prospectar en Instagram!</h2>
-      <p className="text-gray-600">Conecta tu cuenta para empezar a generar nuevos leads</p>
+      <h2 className="text-2xl font-bold text-[#5468FF] mb-2">Conecta tu cuenta para empezar a generar nuevos leads</h2>
     </div>
     
     <button
