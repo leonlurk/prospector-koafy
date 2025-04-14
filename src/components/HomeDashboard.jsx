@@ -25,30 +25,71 @@ const HomeDashboard = ({ user }) => {
           // Generar datos de gráfico basados en el progreso
           const campaign = sorted[0];
           
-          // Crear datos de visualización para el gráfico
-          // Simular datos de progreso diario basados en la tasa de procesamiento
-          const days = ["Lun", "Mar", "Mie", "Jue", "Vie", "Sab"];
-          
-          // Calcular valores basados en el progreso actual y la tasa de procesamiento
-          const baseValue = Math.ceil(campaign.targetCount / 6);
-          const values = [
-            Math.round(baseValue * 0.2),
-            Math.round(baseValue * 0.5),
-            Math.round(baseValue * 1.1),
-            Math.round(baseValue * 0.4),
-            Math.round(baseValue * 0.9),
-            Math.round(campaign.progress / 100 * campaign.targetCount)
-          ];
-          
-          setActiveCampaign({
-            ...campaign,
-            action: getCampaignTypeName(campaign.campaignType),
-            status: "Activa",
-            chartData: {
-              days,
-              values
-            }
-          });
+         // Obtener la tasa de procesamiento de la campaña (mensajes por hora)
+const ratePerHour = campaign.processingRatePerHour || 3; // Usar la tasa guardada o el valor por defecto
+  
+// Calcular el total de horas necesarias
+const totalHoursNeeded = Math.ceil(campaign.targetCount / ratePerHour);
+
+// Calcular horas transcurridas desde el inicio de la campaña
+const now = new Date();
+const startTime = campaign.createdAt instanceof Date ? campaign.createdAt : new Date(campaign.createdAt);
+const elapsedMs = now - startTime;
+const elapsedHours = Math.floor(elapsedMs / (1000 * 60 * 60)); // Horas completas transcurridas
+  
+// Crear datos para el gráfico (máximo 8 puntos para no saturar)
+const timeLabels = [];
+const messageValues = [];
+const maxPoints = 8;
+  
+// Determinar el intervalo de horas a mostrar
+const hourInterval = totalHoursNeeded > maxPoints ? Math.ceil(totalHoursNeeded / maxPoints) : 1;
+  
+// Generar puntos para el gráfico - LÓGICA MODIFICADA PARA MOSTRAR ESCALONES CLAROS
+for (let hour = 0; hour <= totalHoursNeeded; hour += hourInterval) {
+  // Para la etiqueta de hora
+  if (hour === 0) {
+    timeLabels.push("Inicio");
+  } else {
+    timeLabels.push(`${hour}h`);
+  }
+  
+  // Para el valor de mensajes enviados - MODIFICACIÓN CLAVE
+  if (hour <= elapsedHours) {
+    // Para horas ya transcurridas, usar el valor del escalón completado
+    // Cada hora completa representa un lote de mensajes enviados
+    const completedBatches = Math.floor(hour); // Número de lotes completos
+    const messagesAtThisPoint = Math.min(completedBatches * ratePerHour, campaign.targetCount);
+    messageValues.push(messagesAtThisPoint);
+  } else {
+    // Para horas futuras, proyectar en base a lotes futuros
+    const futureBatches = Math.floor(hour);
+    const messagesAtThisPoint = Math.min(futureBatches * ratePerHour, campaign.targetCount);
+    messageValues.push(messagesAtThisPoint);
+  }
+}
+  
+// Asegurar que el último punto muestre el total si la duración está completa
+if (timeLabels[timeLabels.length - 1] !== `${totalHoursNeeded}h`) {
+  timeLabels.push(`${totalHoursNeeded}h`);
+  messageValues.push(campaign.targetCount);
+}
+  
+// Añadir un punto para el progreso actual real
+const actualProgress = Math.round(campaign.progress / 100 * campaign.targetCount);
+const actualHour = Math.min(elapsedHours, totalHoursNeeded);
+  
+setActiveCampaign({
+  ...campaign,
+  action: getCampaignTypeName(campaign.campaignType),
+  status: "Activa",
+  chartData: {
+    timeLabels, // Reemplaza "days" con "timeLabels"
+    messageValues, // Reemplaza "values" con "messageValues"
+    actualProgress,
+    actualHour
+  }
+});
         }
       } catch (error) {
         console.error("Error al cargar campañas activas:", error);
@@ -59,6 +100,48 @@ const HomeDashboard = ({ user }) => {
     
     fetchActiveCampaign();
   }, [user]);
+
+  useEffect(() => {
+    // Solo ejecutar si hay una campaña activa
+    if (!activeCampaign) return;
+    
+    // Configurar intervalo para actualizar el tiempo transcurrido cada minuto
+    const intervalId = setInterval(() => {
+      if (activeCampaign) {
+        const now = new Date();
+        const startTime = activeCampaign.createdAt instanceof Date ? 
+          activeCampaign.createdAt : new Date(activeCampaign.createdAt);
+        const elapsedMs = now - startTime;
+        const elapsedHours = elapsedMs / (1000 * 60 * 60);
+        
+        // Calcular el progreso actual basado en horas transcurridas
+        const ratePerHour = activeCampaign.processingRatePerHour || 3;
+        const completedBatches = Math.floor(elapsedHours);
+        const newProgress = Math.min(completedBatches * ratePerHour, activeCampaign.targetCount);
+        
+        // Solo actualizar el estado si hay un cambio en el progreso
+        if (activeCampaign.chartData && 
+            (activeCampaign.chartData.actualProgress !== newProgress ||
+             activeCampaign.chartData.actualHour !== elapsedHours)) {
+          
+          setActiveCampaign(prev => {
+            if (!prev) return null;
+            
+            return {
+              ...prev,
+              chartData: {
+                ...prev.chartData,
+                actualProgress: newProgress,
+                actualHour: elapsedHours
+              }
+            };
+          });
+        }
+      }
+    }, 60000); // Actualizar cada minuto
+    
+    return () => clearInterval(intervalId);
+  }, [activeCampaign]);
 
   const totalInteractions = 35765;
   
@@ -86,33 +169,38 @@ const HomeDashboard = ({ user }) => {
   const renderLineChart = () => {
     if (!activeCampaign?.chartData) return null;
     
-    // Crear un conjunto de datos más denso para una curva más suave
-    const data = [];
-    const days = activeCampaign.chartData.days;
-    const values = activeCampaign.chartData.values;
+    // Usar los nuevos nombres de propiedades
+    const timeLabels = activeCampaign.chartData.timeLabels;
+    const messageValues = activeCampaign.chartData.messageValues;
     
-    // Añadir puntos interpolados entre días para suavizar la curva
-    for (let i = 0; i < days.length; i++) {
-      data.push({ name: days[i], value: values[i], display: true });
-      
-      // Añadir punto intermedio si no es el último día
-      if (i < days.length - 1) {
-        // Valor interpolado para la curva suave
-        const midValue = (values[i] + values[i+1]) / 2;
-        data.push({ name: '', value: midValue, display: false });
-      }
+    if (!timeLabels || !messageValues) return null;
+    
+    // Crear el conjunto de datos para el gráfico escalonado
+    const data = [];
+    
+    // Para un gráfico escalonado, no necesitamos interpolar puntos
+    // simplemente usamos los valores directos
+    for (let i = 0; i < timeLabels.length; i++) {
+      data.push({ 
+        name: timeLabels[i], 
+        value: messageValues[i], 
+        display: true 
+      });
     }
     
-    // Componente para punto destacado en "Vie"
-    const CustomDot = (props) => {
-      const { cx, cy, payload } = props;
-      if (payload.name === 'Vie' && payload.display) {
-        return (
-          <circle cx={cx} cy={cy} r={4} fill="white" stroke="#4338CA" strokeWidth={2} />
-        );
-      }
-      return null;
-    };
+// Componente para punto destacado en la hora actual
+const CustomDot = (props) => {
+  const { cx, cy, payload, index } = props;
+  
+  // Destacar el punto que representa la hora actual (usando el índice para identificarlo)
+  if (activeCampaign.chartData.actualHour !== undefined && 
+      index === timeLabels.findIndex(label => label === `${Math.floor(activeCampaign.chartData.actualHour)}h`)) {
+    return (
+      <circle cx={cx} cy={cy} r={5} fill="white" stroke="#4338CA" strokeWidth={2} />
+    );
+  }
+  return null;
+};
   
     return (
       <div className="relative w-full h-64 mt-4 mb-2 bg-[#F8F7FF] rounded-lg overflow-hidden">
@@ -166,12 +254,12 @@ const HomeDashboard = ({ user }) => {
               }}
             />
             <Area
-              type="monotone"
+              type="stepAfter"  // Cambiado de "monotone" a "stepAfter" para un gráfico escalonado
               dataKey="value"
               stroke="#4338CA"
               strokeWidth={4}
               fill="url(#colorGradient)"
-              dot={false}
+              dot={true}  // Mostrar puntos en cada paso
               activeDot={{ r: 6, fill: "white", stroke: "#4338CA", strokeWidth: 2 }}
             />
             <Area

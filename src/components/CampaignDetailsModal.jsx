@@ -9,6 +9,76 @@ const CampaignDetailsModal = ({ campaignId, userId, isOpen, onClose, onDelete })
   const [campaign, setCampaign] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [elapsedTime, setElapsedTime] = useState("0:00");
+  const [timerInterval, setTimerInterval] = useState(null);
+  const [batchInfo, setBatchInfo] = useState({
+  completedBatches: 0,
+  nextBatchIn: "0m 0s",
+  progress: 0
+});
+
+  useEffect(() => {
+    if (isOpen && campaign?.status === 'processing' && campaign?.createdAt) {
+      // Función para actualizar el tiempo transcurrido
+      // Función mejorada para actualizar tiempo y lotes
+const updateElapsedTime = () => {
+  const now = new Date();
+  const startTime = campaign.createdAt instanceof Date 
+    ? campaign.createdAt 
+    : new Date(campaign.createdAt);
+  
+  const elapsedMs = now - startTime;
+  const minutes = Math.floor(elapsedMs / 60000);
+  const seconds = Math.floor((elapsedMs % 60000) / 1000);
+  const hours = Math.floor(minutes / 60);
+  
+  // Formatear tiempo transcurrido (igual que antes)
+  if (hours > 0) {
+    setElapsedTime(`${hours}:${(minutes % 60).toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`);
+  } else {
+    setElapsedTime(`${minutes}:${seconds.toString().padStart(2, '0')}`);
+  }
+  
+  // Calcular información de lotes
+  const elapsedHours = elapsedMs / (1000 * 60 * 60);
+  const ratePerHour = campaign.processingRatePerHour || 3;
+  const completedBatches = Math.floor(elapsedHours);
+  
+  // Tiempo hasta el siguiente lote
+  const millisToNextBatch = ((completedBatches + 1) * 60 * 60 * 1000) - elapsedMs;
+  const minutesToNext = Math.floor(millisToNextBatch / 60000);
+  const secondsToNext = Math.floor((millisToNextBatch % 60000) / 1000);
+  const nextBatchIn = `${minutesToNext}m ${secondsToNext}s`;
+  
+  // Progreso porcentual al siguiente lote
+  const progressToNext = Math.min(100, Math.round((elapsedMs % (60 * 60 * 1000)) / (60 * 60 * 10)));
+  
+  setBatchInfo({
+    completedBatches,
+    nextBatchIn,
+    progress: progressToNext
+  });
+};
+      
+      // Actualizar inmediatamente
+      updateElapsedTime();
+      
+      // Configurar intervalo para actualizar cada segundo
+      const interval = setInterval(updateElapsedTime, 1000);
+      setTimerInterval(interval);
+      
+      // Limpieza al desmontar
+      return () => {
+        if (interval) clearInterval(interval);
+      };
+    } else {
+      // Limpiar intervalo si el modal se cierra o la campaña no está en proceso
+      if (timerInterval) {
+        clearInterval(timerInterval);
+        setTimerInterval(null);
+      }
+    }
+  }, [isOpen, campaign, timerInterval]);
   
   useEffect(() => {
     const fetchCampaignDetails = async () => {
@@ -57,6 +127,11 @@ const CampaignDetailsModal = ({ campaignId, userId, isOpen, onClose, onDelete })
   const isCompleted = campaign?.status === 'completed' || 
                       campaign?.status === 'cancelled' || 
                       campaign?.status === 'failed';
+
+  // Añade esto justo después de donde defines isCompleted
+const elapsedMs = campaign?.createdAt 
+? (new Date() - (campaign.createdAt instanceof Date ? campaign.createdAt : new Date(campaign.createdAt))) 
+: 0;
   
   // Formatear fecha
   const formatDate = (dateObj) => {
@@ -160,53 +235,90 @@ const CampaignDetailsModal = ({ campaignId, userId, isOpen, onClose, onDelete })
                 </div>
               </div>
               
+              
               {/* Progreso */}
-              <div className="bg-gray-50 p-4 rounded-lg">
-                <div className="flex justify-between mb-1">
-                  <span className="font-medium text-gray-700">Progreso:</span>
-                  <span className="text-black">{campaign.progress || 0}%</span>
-                </div>
-                <div className="w-full bg-gray-200 rounded-full h-2.5 mb-2">
-                  <div 
-                    className={`h-2.5 rounded-full ${
-                      campaign.status === 'processing' ? 'bg-indigo-600' :
-                      campaign.status === 'paused' ? 'bg-yellow-500' :
-                      campaign.status === 'completed' ? 'bg-green-500' :
-                      'bg-red-500'
-                    }`}
-                    style={{ width: `${campaign.progress || 0}%` }}
-                  ></div>
-                </div>
-                
-                {campaign.status === 'processing' && (
-                  <div className="mt-3 text-sm">
-                    <div className="flex justify-between mb-1">
-                      <span className="text-gray-600">Tasa de procesamiento:</span>
-                      <span className="text-black font-medium">{campaign.processingRatePerHour || 3} ops/hora</span>
-                    </div>
-                    
-                    {campaign.estimatedCompletionTime && (
-                      <div className="flex justify-between">
-                        <span className="text-gray-600">Finalización estimada:</span>
-                        <span className="text-black font-medium">
-                          {formatDate(campaign.estimatedCompletionTime)}
-                        </span>
-                      </div>
-                    )}
-                    
-                    {campaign.estimatedCompletionHours !== undefined && (
-                      <div className="flex justify-between">
-                        <span className="text-gray-600">Duración estimada:</span>
-                        <span className="text-black font-medium">
-                          {campaign.estimatedCompletionHours === 1 
-                            ? '~1 hora' 
-                            : `~${campaign.estimatedCompletionHours} horas`}
-                        </span>
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
+<div className="bg-gray-50 p-4 rounded-lg">
+  <div className="flex justify-between mb-1">
+    <span className="font-medium text-gray-700">Progreso:</span>
+    <span className="text-black">{campaign.progress || 0}%</span>
+  </div>
+  <div className="w-full bg-gray-200 rounded-full h-2.5 mb-2">
+    <div 
+      className={`h-2.5 rounded-full ${
+        campaign.status === 'processing' ? 'bg-indigo-600' :
+        campaign.status === 'paused' ? 'bg-yellow-500' :
+        campaign.status === 'completed' ? 'bg-green-500' :
+        'bg-red-500'
+      }`}
+      style={{ width: `${campaign.progress || 0}%` }}
+    ></div>
+  </div>
+  
+  {campaign.status === 'processing' && (
+  <div className="mt-3 text-sm">
+    {/* Timer en tiempo real */}
+    <div className="flex justify-between mb-1">
+      <span className="text-gray-600">Tiempo transcurrido:</span>
+      <span className="text-black font-medium bg-blue-50 px-2 py-1 rounded">
+        {elapsedTime}
+      </span>
+    </div>
+    
+    <div className="flex justify-between mb-1">
+      <span className="text-gray-600">Tasa de procesamiento:</span>
+      <span className="text-black font-medium">{campaign.processingRatePerHour || 3} ops/hora</span>
+    </div>
+    
+    {/* Información de lotes - NUEVO */}
+    <div className="flex justify-between mb-1">
+      <span className="text-gray-600">Lotes completados:</span>
+      <span className="text-black font-medium">{batchInfo.completedBatches}</span>
+    </div>
+    
+    <div className="flex justify-between mb-1">
+      <span className="text-gray-600">Próximo lote en:</span>
+      <span className="text-black font-medium">{batchInfo.nextBatchIn}</span>
+    </div>
+    
+    {/* Barra de progreso para el próximo lote - NUEVO */}
+    <div className="mt-2 mb-3">
+      <div className="flex justify-between text-xs mb-1">
+        <span>Progreso hacia el próximo lote</span>
+        <span>{batchInfo.progress}%</span>
+      </div>
+      <div className="w-full bg-gray-200 rounded-full h-1.5">
+        <div 
+          className="h-1.5 rounded-full bg-indigo-500"
+          style={{ width: `${batchInfo.progress}%` }}
+        ></div>
+      </div>
+    </div>
+    
+    {/* Resto del código... */}
+  </div>
+)}
+      
+      {campaign.estimatedCompletionTime && (
+        <div className="flex justify-between">
+          <span className="text-gray-600">Finalización estimada:</span>
+          <span className="text-black font-medium">
+            {formatDate(campaign.estimatedCompletionTime)}
+          </span>
+        </div>
+      )}
+      
+      {campaign.estimatedCompletionHours !== undefined && (
+        <div className="flex justify-between">
+          <span className="text-gray-600">Duración estimada:</span>
+          <span className="text-black font-medium">
+            {campaign.estimatedCompletionHours === 1 
+              ? '~1 hora' 
+              : `~${campaign.estimatedCompletionHours} horas`}
+          </span>
+        </div>
+      )}
+  
+</div>
               
               {/* Usuarios */}
               <div className="border border-gray-200 rounded-lg">
@@ -220,11 +332,18 @@ const CampaignDetailsModal = ({ campaignId, userId, isOpen, onClose, onDelete })
                   </div>
                   
                   {campaign.totalProcessed !== undefined && (
-                    <div className="flex justify-between mb-2">
-                      <span className="text-gray-700">Usuarios procesados:</span>
-                      <span className="font-medium text-black">{campaign.totalProcessed || 0}</span>
-                    </div>
-                  )}
+                <div className="flex justify-between mb-2">
+                  <span className="text-gray-700">Usuarios procesados:</span>
+                  <span className="font-medium text-black">
+                    {campaign.totalProcessed || 0}
+                    {campaign.status === 'processing' && (
+                      <span className="text-gray-500 text-xs">
+                        {" "}(próximo lote: {Math.min((Math.floor(elapsedMs / (1000 * 60 * 60)) + 1) * (campaign.processingRatePerHour || 3), campaign.targetCount || 0)})
+                      </span>
+                    )}
+                  </span>
+                </div>
+              )}
                   
                   {campaign.filteredUsers !== undefined && (
                     <div className="flex justify-between mb-2">
