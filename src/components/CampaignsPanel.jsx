@@ -1,8 +1,10 @@
 import { useState, useEffect, useCallback } from "react";
 import PropTypes from 'prop-types';
-import { getActiveCampaigns, getRecentCampaigns, cancelCampaign } from "../campaignStore";
+import { getActiveCampaigns, getRecentCampaigns, cancelCampaign, checkAndActivateNextScheduled, pauseCampaign, resumeCampaign, updateCampaign } from "../campaignStore";
 import logApiRequest from "../requestLogger";
 import CampaignDetailsModal from "./CampaignDetailsModal";
+import { calculateCampaignProgress } from "../campaignSimulator";
+import { FaPause, FaPlay, FaTrash } from 'react-icons/fa';
 
 const CampaignsPanel = ({ user, onRefreshStats, onCreateCampaign }) => {
   const [campaigns, setCampaigns] = useState([]);
@@ -20,6 +22,83 @@ const CampaignsPanel = ({ user, onRefreshStats, onCreateCampaign }) => {
   // Opciones para los dropdowns
   const estadoOptions = ["Todas", "Activas", "Pausadas", "Terminadas"];
   const tipoOptions = ["Todos", "Mensajes", "Comentarios", "Seguimientos"];
+
+  // Función corregida que usa el simulador local
+  const updateActiveCampaignsProgress = useCallback(() => {
+    // Usamos una función dentro de setCampaigns para asegurar que trabajamos con el estado más reciente
+    setCampaigns(currentCampaigns => {
+      // Necesitamos un flag para saber si algo cambió y evitar re-renders innecesarios
+      let campaignsUpdated = false;
+      const updatedCampaigns = currentCampaigns.map(campaign => {
+        // Solo procesar las que están 'processing'
+        if (campaign.status !== 'processing') {
+          return campaign; // No cambios para esta campaña
+        }
+
+        try {
+          // Calcular progreso simulado
+          const progressData = calculateCampaignProgress(campaign);
+          
+          if (!progressData) return campaign; // No hay datos de progreso, no hacer nada
+
+          const newPercentage = progressData.percentage;
+          const newProcessed = progressData.messages_sent;
+          const newTargetCount = progressData.total_users;
+
+          // --- Lógica de Finalización basada en Simulación --- 
+          if (newPercentage >= 100) {
+            console.log(`Simulación para ${campaign.id} alcanzó 100%. Marcando como completada.`);
+            // Llamar a updateCampaign para cambiar estado en Firestore
+            updateCampaign(user.uid, campaign.id, { 
+              status: 'completed', 
+              endedAt: new Date(), 
+              progress: 100, 
+              totalProcessed: newProcessed // Guardar el último valor calculado
+            }).then(() => {
+              console.log(`Firestore actualizado a completed para ${campaign.id}`);
+              // Podríamos forzar un refreshKey aquí si la actualización local no es suficiente
+              // setRefreshKey(prev => prev + 1);
+            }).catch(err => {
+              console.error(`Error al actualizar Firestore a completed para ${campaign.id}:`, err);
+            });
+
+            // Actualizar estado local inmediatamente
+            campaignsUpdated = true;
+            return {
+              ...campaign,
+              status: 'completed', // Cambiar estado local
+              progress: 100,
+              totalProcessed: newProcessed,
+              targetCount: newTargetCount
+            };
+          } else {
+            // --- Actualizar Progreso (si no ha llegado al 100%) --- 
+            // Solo actualizar si el progreso realmente cambió
+            if (campaign.progress !== newPercentage || 
+                campaign.totalProcessed !== newProcessed ||
+                campaign.targetCount !== newTargetCount) {
+              
+              campaignsUpdated = true;
+              return {
+                ...campaign,
+                progress: newPercentage,
+                totalProcessed: newProcessed,
+                targetCount: newTargetCount
+              };
+            }
+          }
+        } catch (error) {
+          console.error(`Error actualizando progreso simulado para ${campaign.id}:`, error);
+        }
+        
+        // Si no hubo cambios o error, devolver la campaña original
+        return campaign;
+      });
+
+      // Solo devolver el nuevo array si hubo cambios reales
+      return campaignsUpdated ? updatedCampaigns : currentCampaigns;
+    });
+  }, [user?.uid]);
 
   // Función para obtener las campañas
   const fetchCampaigns = useCallback(async () => {
@@ -96,28 +175,73 @@ const CampaignsPanel = ({ user, onRefreshStats, onCreateCampaign }) => {
 
   // Programar actualizaciones periódicas si hay campañas activas
   useEffect(() => {
-    const activeCampaignsCount = campaigns.filter(c => c.status === "processing").length;
+    const activeCampaigns = campaigns.filter(c => c.status === "processing");
     
-    if (activeCampaignsCount > 0) {
-      const intervalId = setInterval(() => {
-        setRefreshKey(prev => prev + 1);
-        
-        // También actualizar estadísticas generales si hay una función para ello
+    if (activeCampaigns.length > 0) {
+      const updateProgressAndStats = () => {
+        updateActiveCampaignsProgress(); // Llamar a la versión useCallback
         if (typeof onRefreshStats === 'function') {
           onRefreshStats();
         }
-      }, 10000); // Actualizar cada 10 segundos
-      
+      };
+      updateProgressAndStats(); // Ejecutar al inicio
+      const intervalId = setInterval(updateProgressAndStats, 10000); 
       return () => clearInterval(intervalId);
     }
-  }, [campaigns, onRefreshStats]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [campaigns.filter(c => c.status === "processing").length, user?.uid, onRefreshStats, updateActiveCampaignsProgress]);
+
+  // Función para pausar una campaña
+  const handlePauseCampaign = async (campaignId, e) => {
+    e.stopPropagation();
+    console.log(`Intentando pausar ${campaignId}`);
+    const success = await pauseCampaign(user.uid, campaignId);
+    if (success) {
+      console.log(`Pausa exitosa para ${campaignId}`);
+      setRefreshKey(prev => prev + 1); // Refrescar la lista para ver el cambio de estado
+      // Loggear éxito (opcional pero recomendado)
+      await logApiRequest({
+        endpoint: "internal/pause_campaign", requestData: { campaignId }, userId: user.uid,
+        status: "success", source: "CampaignsPanel", metadata: { action: "pause_campaign" }
+      });
+    } else {
+      console.error(`Error al pausar ${campaignId}`);
+      // Loggear error (opcional)
+      await logApiRequest({
+        endpoint: "internal/pause_campaign", requestData: { campaignId }, userId: user.uid,
+        status: "error", source: "CampaignsPanel", metadata: { action: "pause_campaign" }
+      });
+      // Mostrar notificación al usuario (opcional)
+    }
+  };
+
+  // Función para reanudar una campaña
+  const handleResumeCampaign = async (campaignId, e) => {
+    e.stopPropagation();
+    console.log(`Intentando reanudar ${campaignId}`);
+    const success = await resumeCampaign(user.uid, campaignId);
+    if (success) {
+      console.log(`Reanudación/encolado exitoso para ${campaignId}`);
+      setRefreshKey(prev => prev + 1); // Refrescar la lista
+      // Loggear éxito
+      await logApiRequest({
+        endpoint: "internal/resume_campaign", requestData: { campaignId }, userId: user.uid,
+        status: "success", source: "CampaignsPanel", metadata: { action: "resume_campaign" }
+      });
+    } else {
+      console.error(`Error al reanudar ${campaignId}`);
+      // Loggear error
+      await logApiRequest({
+        endpoint: "internal/resume_campaign", requestData: { campaignId }, userId: user.uid,
+        status: "error", source: "CampaignsPanel", metadata: { action: "resume_campaign" }
+      });
+    }
+  };
 
   // Función para cancelar una campaña
   const handleCancelCampaign = async (campaignId, e) => {
-    e.stopPropagation(); // Evitar que el clic se propague al contenedor
-    
+    e.stopPropagation();
     if (!window.confirm('¿Estás seguro de cancelar esta campaña?')) return;
-    
     try {
       await logApiRequest({
         endpoint: "internal/cancel_campaign",
@@ -138,6 +262,10 @@ const CampaignsPanel = ({ user, onRefreshStats, onCreateCampaign }) => {
           status: "success",
           source: "CampaignsPanel"
         });
+        
+        console.log(`Campaña ${campaignId} cancelada. Verificando si hay otra en cola...`);
+        await checkAndActivateNextScheduled(user.uid);
+        
       } else {
         await logApiRequest({
           endpoint: "internal/cancel_campaign",
@@ -222,6 +350,11 @@ const CampaignsPanel = ({ user, onRefreshStats, onCreateCampaign }) => {
         return {
           text: 'Activa',
           className: 'bg-green-100 text-green-800'
+        };
+      case 'scheduled':
+        return {
+          text: 'En Cola',
+          className: 'bg-blue-100 text-blue-800'
         };
       case 'paused':
         return {
@@ -393,21 +526,21 @@ const CampaignsPanel = ({ user, onRefreshStats, onCreateCampaign }) => {
                       
                       {campaign.status === 'processing' && (
                         <div className="text-xs text-indigo-600">
-                          {campaign.targetCount && `${campaign.totalProcessed || 0}/${campaign.targetCount} usuarios procesados`}
+                          {`${campaign.totalProcessed || 0}/${campaign.targetCount || 0} usuarios procesados`}
                         </div>
                       )}
-                    </div>
-  
-                    {campaign.status === 'processing' && (
-                      <div className="mt-1 w-full bg-gray-200 rounded-full h-1.5">
-                        <div 
-                          className="h-1.5 rounded-full bg-indigo-600"
-                          style={{ width: `${campaign.progress || 0}%` }}
-                        ></div>
                       </div>
-                    )}
-                  </div>
-                </div>
+
+                      {campaign.status === 'processing' && (
+                        <div className="mt-1 w-full bg-gray-200 rounded-full h-1.5">
+                          <div 
+                            className="h-1.5 rounded-full bg-indigo-600"
+                            style={{ width: `${campaign.progress || 0}%` }}
+                          ></div>
+                        </div>
+                      )}
+                      </div>
+                      </div>
 
                 {/* Estado y menú */}
                 <div className="flex items-center mt-3 sm:mt-0 w-full sm:w-auto justify-between sm:justify-end">
@@ -415,18 +548,52 @@ const CampaignsPanel = ({ user, onRefreshStats, onCreateCampaign }) => {
                     {statusBadge.text}
                   </span>
                   
-                  {/* Botón de settings - Visible para todas las campañas */}
-                  <button 
-                    onClick={(e) => openDetailsModal(campaign, e)}
-                    className="ml-2 sm:ml-4 text-gray-400 bg-transparent border-0 p-0"
-                    title="Ver detalles de la campaña"
-                  >
-                    <img
-                      src="/assets/setting-5.png"
-                      alt="Opciones"
-                      className="w-8 h-8 sm:w-10 sm:h-10 md:w-12 md:h-12"
-                    />
-                  </button>
+                  {/* Botones de acción condicionales */}                  
+                  <div className="flex items-center ml-2 sm:ml-4">
+                    {campaign.status === 'processing' && (
+                      <button 
+                        onClick={(e) => handlePauseCampaign(campaign.id, e)}
+                        className="p-2 text-yellow-600 hover:text-yellow-800 bg-yellow-100 hover:bg-yellow-200 rounded-full mr-2"
+                        title="Pausar campaña"
+                      >
+                        <FaPause size={16} />
+                      </button>
+                    )}
+
+                    {campaign.status === 'paused' && (
+                      <button 
+                        onClick={(e) => handleResumeCampaign(campaign.id, e)}
+                        className="p-2 text-green-600 hover:text-green-800 bg-green-100 hover:bg-green-200 rounded-full mr-2"
+                        title="Reanudar campaña"
+                      >
+                        <FaPlay size={16} />
+                      </button>
+                    )}
+                    
+                    {/* Botón Cancelar (ahora icono) - visible si está processing o paused */}
+                    {(campaign.status === 'processing' || campaign.status === 'paused' || campaign.status === 'scheduled') && (
+                      <button 
+                        onClick={(e) => handleCancelCampaign(campaign.id, e)}
+                        className="p-2 text-red-600 hover:text-red-800 bg-red-100 hover:bg-red-200 rounded-full mr-2"
+                        title="Cancelar campaña"
+                      >
+                        <FaTrash size={16} /> 
+                      </button>
+                    )}
+
+                    {/* Botón de detalles/settings (siempre visible) */}
+                    <button 
+                      onClick={(e) => openDetailsModal(campaign, e)}
+                      className="text-gray-400 bg-transparent border-0 p-0"
+                      title="Ver detalles de la campaña"
+                    >
+                      <img
+                        src="/assets/setting-5.png"
+                        alt="Opciones"
+                        className="w-8 h-8 sm:w-10 sm:h-10 md:w-12 md:h-12"
+                      />
+                    </button>
+                  </div>
                 </div>
               </div>
             );

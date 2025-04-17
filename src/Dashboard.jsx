@@ -16,6 +16,10 @@ import HomeDashboard from "./components/HomeDashboard";
 import StatisticsDashboard from "./components/StatisticsDashboard";
 import NuevaCampanaModal from "./components/NuevaCampanaModal";
 import BlacklistDashboard from "./components/BlacklistDashboard";
+import { updateCampaign } from "./campaignStore";
+import { instagramApi } from "./instagramApi";
+import logApiRequest from "./requestLogger";
+import { getLatestProcessingCampaign, getOldestScheduledCampaign, activateCampaign } from "./campaignStore";
 
 
 
@@ -60,6 +64,7 @@ const Dashboard = () => {
   const [showBlacklistPanel, setShowBlacklistPanel] = useState(false);
   const [showCampaignsPanel, setShowCampaignsPanel] = useState(false);
   const [isNewCampaignModalOpen, setIsNewCampaignModalOpen] = useState(false);
+  const [processingScheduled, setProcessingScheduled] = useState(false);
 
   // Notificación simple
   const showNotification = (message, type = "info") => {
@@ -290,6 +295,70 @@ const Dashboard = () => {
     };
   }, [navigate, fetchTemplates, checkInstagramSession]);
 
+  // --- Lógica de Polling para Campañas Programadas (Lógica de Cola Estricta) ---
+  useEffect(() => {
+    if (!user?.uid) return;
+
+    console.log("Iniciando intervalo de verificación de cola de campañas...");
+    const intervalId = setInterval(async () => {
+      if (processingScheduled) {
+        console.log("Polling Fallback: Procesamiento anterior en curso.");
+        return; 
+      }
+
+      console.log("Polling Fallback: Verificando cola...");
+      setProcessingScheduled(true);
+
+      try {
+        // 1. ¿Hay alguna campaña activa?
+        const currentActive = await getLatestProcessingCampaign(user.uid);
+        
+        if (!currentActive) {
+          // 2. No hay activa. ¿Hay alguna programada esperando?
+          console.log("Polling Fallback: No hay campañas activas. Buscando programadas...");
+          const nextCampaign = await getOldestScheduledCampaign(user.uid);
+
+          if (nextCampaign) {
+            // 3. ¡Sí hay! Intentar activarla.
+            console.log(`Polling Fallback: Activando campaña programada ${nextCampaign.id}`);
+            const session = await getInstagramSession(user.uid);
+            const currentInstagramToken = session?.token;
+
+            if (!currentInstagramToken) {
+              console.error("Polling Fallback: No se pudo obtener token para activar campaña.");
+              showNotification("Error: No se pudo obtener token para activar campaña en cola.", "error");
+            } else {
+               // Llamar a activateCampaign (que maneja errores internos y logs)
+               const activated = await activateCampaign(user.uid, nextCampaign, currentInstagramToken);
+               if (activated) {
+                   showNotification(`Campaña en cola '${nextCampaign.name}' iniciada.`, "success");
+                   // Podríamos querer refrescar la lista de campañas aquí
+               } else {
+                    // activateCampaign ya maneja el log y el cambio a status: failed
+                    showNotification(`Error al iniciar campaña en cola '${nextCampaign.name}'.`, "error");
+               }
+            }
+          } else {
+             console.log("Polling Fallback: No hay campañas programadas esperando.");
+          }
+        } else {
+            console.log(`Polling Fallback: Campaña ${currentActive.id} sigue activa.`);
+        }
+
+      } catch (error) {
+        console.error("Polling Fallback: Error general al verificar/procesar cola:", error);
+      } finally {
+        setProcessingScheduled(false);
+        console.log("Polling Fallback: Ciclo completado.");
+      }
+    }, 60000); // Verificar cada 60 segundos (puede ajustarse)
+
+    return () => {
+      console.log("Limpiando intervalo de verificación de cola.");
+      clearInterval(intervalId);
+    };
+  }, [user, processingScheduled]); // Dependencias
+
   // Guarda plantilla
   const saveTemplate = async () => {
     if (!user) {
@@ -386,7 +455,10 @@ const Dashboard = () => {
     }
 
     if (selectedOption === "Home") {
-      return <HomeDashboard user={user} />;
+      return <HomeDashboard 
+               user={user} 
+               onCreateCampaign={() => setIsNewCampaignModalOpen(true)} 
+             />;
     }
 
     if (selectedOption === "Campañas") {

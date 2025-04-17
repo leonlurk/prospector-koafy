@@ -1,0 +1,1233 @@
+Instagram Bot API Documentation
+This documentation explains how to consume the Instagram Bot API in ReactJS and FlutterFlow applications. The API provides functionality for automating Instagram operations such as logging in, retrieving likes, following users, and sending messages.
+
+Base URL
+All endpoints are relative to the base URL of your API server:
+
+https://your-api-domain.com
+Replace your-api-domain.com with the actual domain where your API is hosted.
+
+Authentication
+Most endpoints require authentication using a JWT token. After a successful login, store the token and include it in the header of subsequent requests.
+
+API Endpoints
+Authentication
+Login
+URL: /login
+Method: POST
+Authentication: No
+Body Parameters:
+username: Instagram username
+password: Instagram password
+Response:
+Success (200):
+{
+  "status": "success",
+  "message": "Login successful",
+  "username": "your_username",
+  "token": "jwt_token_here"
+}
+Needs Verification (202):
+{
+  "status": "needs_verification",
+  "message": "Please enter the verification code sent by Instagram",
+  "challenge_type": "two_factor_auth",
+  "username": "your_username"
+}
+Verify 2FA
+URL: /verify_2fa
+Method: POST
+Authentication: No
+Body Parameters:
+username: Instagram username
+verification_code: Verification code from Instagram
+Response:
+Success (200):
+{
+  "status": "success",
+  "message": "Login successful with verification code",
+  "username": "your_username",
+  "token": "jwt_token_here"
+}
+Check Session
+URL: /session
+Method: GET
+Authentication: Yes (token in header)
+Response:
+Success (200):
+{
+  "status": "success",
+  "authenticated": true,
+  "username": "your_username"
+}
+Reset Session
+URL: /reset_session
+Method: POST
+Body Parameters:
+username: Instagram username
+Response:
+Success (200):
+{
+  "status": "success",
+  "message": "Session reset for your_username. Please login again."
+}
+Operations
+Get Post Likes
+URL: /obtener_likes
+Method: POST
+Authentication: Yes (token in header)
+Body Parameters:
+link: Instagram post URL
+Response:
+Success (200):
+{
+  "status": "success",
+  "likes": ["user1", "user2", "user3"],
+  "count": 3
+}
+Follow Users
+URL: /seguir_usuarios
+Method: POST
+Authentication: Yes (token in header)
+Body Parameters:
+usuarios: Comma-separated list of usernames
+Response:
+Success (200):
+{
+  "status": "success",
+  "results": {
+    "user1": {"status": "processing", "message": "Being processed in background"},
+    "user2": {"status": "processing", "message": "Being processed in background"}
+  },
+  "message": "Procesando 2 usuarios en segundo plano",
+  "check_status_endpoint": "/usage_stats"
+}
+Send Messages
+URL: /enviar_mensajes_multiple
+Method: POST
+Authentication: Yes (token in header)
+Body Parameters:
+usuarios: Comma-separated list of usernames
+mensaje: Message text to send
+skip_existing: Boolean (true/false) to skip users with existing conversations
+Response:
+Success (200):
+{
+  "status": "success",
+  "results": {
+    "user1": {"status": "processing", "message": "Being processed in background"},
+    "user2": {"status": "processing", "message": "Being processed in background"}
+  },
+  "message": "Procesando mensajes para 2 usuarios en segundo plano",
+  "check_status_endpoint": "/usage_stats"
+}
+Send Media
+URL: /enviar_media
+Method: POST
+Authentication: Yes (token in header)
+Body Parameters:
+usuarios: Comma-separated list of usernames
+mensaje: (Optional) Message text to send with media
+media_type: Type of media ("photo", "video", or "voice")
+file: Media file to send
+skip_existing: Boolean (true/false) to skip users with existing conversations
+Response:
+Success (200):
+{
+  "status": "success",
+  "results": {
+    "user1": {"status": "processing", "message": "Being processed in background"},
+    "user2": {"status": "processing", "message": "Being processed in background"}
+  },
+  "message": "Procesando envío de media para 2 usuarios en segundo plano",
+  "check_status_endpoint": "/usage_stats"
+}
+Account Management
+Get Usage Statistics
+URL: /usage_stats
+Method: GET
+Authentication: Yes (token in header)
+Response:
+Success (200):
+{
+  "status": "success",
+  "username": "your_username",
+  "usage": {
+    "message": {
+      "hour": {"current": 5, "limit": 15},
+      "day": {"current": 20, "limit": 50}
+    },
+    "follow": {
+      "hour": {"current": 2, "limit": 20},
+      "day": {"current": 10, "limit": 100}
+    }
+  },
+  "block_status": null,
+  "activity_level": "normal",
+  "level_limits": {
+    "follow": {"hour": 20, "day": 100},
+    "message": {"hour": 15, "day": 50},
+    "like": {"hour": 30, "day": 120}
+  }
+}
+Check Account Health
+URL: /account_health
+Method: GET
+Authentication: Yes (token in header)
+Response:
+Success (200):
+{
+  "status": "success",
+  "username": "your_username",
+  "health_checks": {
+    "blocked_status": {
+      "is_blocked": false,
+      "message": "Cuenta no bloqueada"
+    },
+    "activity_level": {
+      "status": "normal",
+      "message": "Nivel de actividad normal"
+    },
+    "api_access": {
+      "status": "ok",
+      "message": "Acceso a la API funciona correctamente"
+    }
+  },
+  "recommendations": [
+    "La cuenta parece estar en buen estado. Mantén los niveles de actividad actuales"
+  ]
+}
+Set Activity Level
+URL: /set_activity_level
+Method: POST
+Authentication: Yes (token in header)
+Body Parameters:
+level: Activity level ("safe", "normal", or "aggressive")
+Response:
+Success (200):
+{
+  "status": "success",
+  "message": "Activity level set to normal",
+  "activity_level": "normal",
+  "limits": {
+    "follow": {"hour": 20, "day": 100},
+    "message": {"hour": 15, "day": 50},
+    "like": {"hour": 30, "day": 120}
+  }
+}
+Set Warming Mode
+URL: /warming_mode
+Method: POST
+Authentication: Yes (token in header)
+Body Parameters:
+enable: Boolean (true/false) to enable or disable warming mode
+Response:
+Success (200):
+{
+  "status": "success",
+  "message": "Modo de calentamiento activado. Los límites se han reducido al 30%",
+  "new_limits": {
+    "follow": {"hour": 6, "day": 30},
+    "message": {"hour": 4, "day": 15},
+    "like": {"hour": 9, "day": 36}
+  }
+}
+Pause Operations
+URL: /pause_operations
+Method: POST
+Authentication: Yes (token in header)
+Body Parameters:
+duration_minutes: Number of minutes to pause operations
+Response:
+Success (200):
+{
+  "status": "success",
+  "message": "Operaciones pausadas por 30 minutos",
+  "resumed_at": "2025-03-10T12:30:00.000Z"
+}
+Get Message History
+URL: /message_history
+Method: GET
+Authentication: Yes (token in header)
+Query Parameters:
+limit: (Optional) Maximum number of messages to return
+Response:
+Success (200):
+{
+  "status": "success",
+  "username": "your_username",
+  "message_history": [
+    {
+      "target": "user1",
+      "status": "success",
+      "timestamp": "2025-03-10T10:15:30.000Z"
+    },
+    {
+      "target": "user2",
+      "status": "error: User not found",
+      "timestamp": "2025-03-10T10:14:20.000Z"
+    }
+  ],
+  "count": 2
+}
+Get Cached Likes
+URL: /get_cached_likes
+Method: GET
+Authentication: Yes (token in header)
+Response:
+Success (200):
+{
+  "status": "success",
+  "likes": ["user1", "user2", "user3"],
+  "count": 3
+}
+Implementation in ReactJS
+Setup Axios
+First, set up Axios for making API requests:
+
+import axios from 'axios';
+
+// Create an instance of axios with the base URL
+const api = axios.create({
+  baseURL: 'https://your-api-domain.com',
+});
+
+// Add a request interceptor for authentication
+api.interceptors.request.use(
+  (config) => {
+    const token = localStorage.getItem('instagram_bot_token');
+    if (token) {
+      config.headers.token = token;
+    }
+    return config;
+  },
+  (error) => Promise.reject(error)
+);
+Login and 2FA Verification
+// Function for login
+const login = async (username, password) => {
+  try {
+    const formData = new FormData();
+    formData.append('username', username);
+    formData.append('password', password);
+    
+    const response = await api.post('/login', formData);
+    
+    if (response.data.status === 'success') {
+      // Save token
+      localStorage.setItem('instagram_bot_token', response.data.token);
+      return { success: true, data: response.data };
+    } else if (response.data.status === 'needs_verification') {
+      // Return verification needed
+      return { success: false, verification: true, data: response.data };
+    }
+  } catch (error) {
+    console.error('Login error:', error);
+    return { 
+      success: false, 
+      error: error.response?.data?.message || 'An error occurred during login' 
+    };
+  }
+};
+
+// Function for 2FA verification
+const verify2FA = async (username, verificationCode) => {
+  try {
+    const formData = new FormData();
+    formData.append('username', username);
+    formData.append('verification_code', verificationCode);
+    
+    const response = await api.post('/verify_2fa', formData);
+    
+    if (response.data.status === 'success') {
+      // Save token
+      localStorage.setItem('instagram_bot_token', response.data.token);
+      return { success: true, data: response.data };
+    }
+    
+    return { success: false, data: response.data };
+  } catch (error) {
+    console.error('Verification error:', error);
+    return { 
+      success: false, 
+      error: error.response?.data?.message || 'An error occurred during verification' 
+    };
+  }
+};
+Get Post Likes
+const getPostLikes = async (postLink) => {
+  try {
+    const formData = new FormData();
+    formData.append('link', postLink);
+    
+    const response = await api.post('/obtener_likes', formData);
+    
+    return { success: true, data: response.data };
+  } catch (error) {
+    console.error('Get likes error:', error);
+    return { 
+      success: false, 
+      error: error.response?.data?.message || 'An error occurred while getting likes' 
+    };
+  }
+};
+Follow Users
+const followUsers = async (usernames) => {
+  try {
+    const formData = new FormData();
+    formData.append('usuarios', usernames); // comma-separated list
+    
+    const response = await api.post('/seguir_usuarios', formData);
+    
+    return { success: true, data: response.data };
+  } catch (error) {
+    console.error('Follow users error:', error);
+    return { 
+      success: false, 
+      error: error.response?.data?.message || 'An error occurred while following users' 
+    };
+  }
+};
+Send Messages
+const sendMessages = async (usernames, message, skipExisting = false) => {
+  try {
+    const formData = new FormData();
+    formData.append('usuarios', usernames); // comma-separated list
+    formData.append('mensaje', message);
+    formData.append('skip_existing', skipExisting);
+    
+    const response = await api.post('/enviar_mensajes_multiple', formData);
+    
+    return { success: true, data: response.data };
+  } catch (error) {
+    console.error('Send messages error:', error);
+    return { 
+      success: false, 
+      error: error.response?.data?.message || 'An error occurred while sending messages' 
+    };
+  }
+};
+Send Media
+const sendMedia = async (usernames, file, mediaType, message = '', skipExisting = false) => {
+  try {
+    const formData = new FormData();
+    formData.append('usuarios', usernames); // comma-separated list
+    formData.append('file', file); // File object
+    formData.append('media_type', mediaType); // "photo", "video", or "voice"
+    formData.append('mensaje', message);
+    formData.append('skip_existing', skipExisting);
+    
+    const response = await api.post('/enviar_media', formData);
+    
+    return { success: true, data: response.data };
+  } catch (error) {
+    console.error('Send media error:', error);
+    return { 
+      success: false, 
+      error: error.response?.data?.message || 'An error occurred while sending media' 
+    };
+  }
+};
+Get Usage Statistics
+const getUsageStats = async () => {
+  try {
+    const response = await api.get('/usage_stats');
+    
+    return { success: true, data: response.data };
+  } catch (error) {
+    console.error('Get usage stats error:', error);
+    return { 
+      success: false, 
+      error: error.response?.data?.message || 'An error occurred while getting usage stats' 
+    };
+  }
+};
+Implementation in FlutterFlow
+HTTP Requests Configuration
+In FlutterFlow, you'll use HTTP requests to interact with the API. Here's how to set up the authentication and requests.
+
+Setting Up Headers
+Create a function to get the authentication headers:
+
+Map<String, dynamic> getAuthHeaders() {
+  final token = FFAppState().instagramBotToken;
+  return {
+    'token': token,
+  };
+}
+Login
+Future<dynamic> loginAction(String username, String password) async {
+  final response = await HttpClient.post(
+    'https://your-api-domain.com/login',
+    headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+    body: {
+      'username': username,
+      'password': password,
+    },
+    returnBody: true,
+  );
+
+  final jsonResponse = jsonDecode(response.body);
+  
+  if (jsonResponse['status'] == 'success') {
+    // Save token
+    FFAppState().instagramBotToken = jsonResponse['token'];
+    return {'success': true, 'data': jsonResponse};
+  } else if (jsonResponse['status'] == 'needs_verification') {
+    // Verification needed
+    return {'success': false, 'verification': true, 'data': jsonResponse};
+  }
+  
+  return {'success': false, 'error': jsonResponse['message'] ?? 'An error occurred'};
+}
+Verify 2FA
+Future<dynamic> verify2FAAction(String username, String verificationCode) async {
+  final response = await HttpClient.post(
+    'https://your-api-domain.com/verify_2fa',
+    headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+    body: {
+      'username': username,
+      'verification_code': verificationCode,
+    },
+    returnBody: true,
+  );
+
+  final jsonResponse = jsonDecode(response.body);
+  
+  if (jsonResponse['status'] == 'success') {
+    // Save token
+    FFAppState().instagramBotToken = jsonResponse['token'];
+    return {'success': true, 'data': jsonResponse};
+  }
+  
+  return {'success': false, 'error': jsonResponse['message'] ?? 'An error occurred'};
+}
+Get Post Likes
+Future<dynamic> getPostLikesAction(String postLink) async {
+  final response = await HttpClient.post(
+    'https://your-api-domain.com/obtener_likes',
+    headers: {
+      ...getAuthHeaders(),
+      'Content-Type': 'application/x-www-form-urlencoded',
+    },
+    body: {
+      'link': postLink,
+    },
+    returnBody: true,
+  );
+
+  final jsonResponse = jsonDecode(response.body);
+  
+  if (jsonResponse['status'] == 'success') {
+    return {'success': true, 'data': jsonResponse};
+  }
+  
+  return {'success': false, 'error': jsonResponse['message'] ?? 'An error occurred'};
+}
+Follow Users
+Future<dynamic> followUsersAction(String usernames) async {
+  final response = await HttpClient.post(
+    'https://your-api-domain.com/seguir_usuarios',
+    headers: {
+      ...getAuthHeaders(),
+      'Content-Type': 'application/x-www-form-urlencoded',
+    },
+    body: {
+      'usuarios': usernames, // comma-separated list
+    },
+    returnBody: true,
+  );
+
+  final jsonResponse = jsonDecode(response.body);
+  
+  if (jsonResponse['status'] == 'success') {
+    return {'success': true, 'data': jsonResponse};
+  }
+  
+  return {'success': false, 'error': jsonResponse['message'] ?? 'An error occurred'};
+}
+Send Messages
+Future<dynamic> sendMessagesAction(
+  String usernames,
+  String message,
+  bool skipExisting,
+) async {
+  final response = await HttpClient.post(
+    'https://your-api-domain.com/enviar_mensajes_multiple',
+    headers: {
+      ...getAuthHeaders(),
+      'Content-Type': 'application/x-www-form-urlencoded',
+    },
+    body: {
+      'usuarios': usernames, // comma-separated list
+      'mensaje': message,
+      'skip_existing': skipExisting.toString(),
+    },
+    returnBody: true,
+  );
+
+  final jsonResponse = jsonDecode(response.body);
+  
+  if (jsonResponse['status'] == 'success') {
+    return {'success': true, 'data': jsonResponse};
+  }
+  
+  return {'success': false, 'error': jsonResponse['message'] ?? 'An error occurred'};
+}
+Send Media
+For sending media files in FlutterFlow, you'll need a more complex setup using a multipart request:
+
+Future<dynamic> sendMediaAction(
+  String usernames,
+  FFUploadedFile file,
+  String mediaType,
+  String message,
+  bool skipExisting,
+) async {
+  // Create a multipart request
+  var request = http.MultipartRequest(
+    'POST',
+    Uri.parse('https://your-api-domain.com/enviar_media'),
+  );
+  
+  // Add headers
+  request.headers.addAll(getAuthHeaders());
+  
+  // Add form fields
+  request.fields['usuarios'] = usernames;
+  request.fields['media_type'] = mediaType;
+  request.fields['mensaje'] = message;
+  request.fields['skip_existing'] = skipExisting.toString();
+  
+  // Add file
+  var bytes = await file.readAsBytes();
+  var multipartFile = http.MultipartFile.fromBytes(
+    'file',
+    bytes,
+    filename: file.name,
+  );
+  request.files.add(multipartFile);
+  
+  // Send the request
+  var streamedResponse = await request.send();
+  var response = await http.Response.fromStream(streamedResponse);
+  
+  final jsonResponse = jsonDecode(response.body);
+  
+  if (jsonResponse['status'] == 'success') {
+    return {'success': true, 'data': jsonResponse};
+  }
+  
+  return {'success': false, 'error': jsonResponse['message'] ?? 'An error occurred'};
+}
+Get Usage Statistics
+Future<dynamic> getUsageStatsAction() async {
+  final response = await HttpClient.get(
+    'https://your-api-domain.com/usage_stats',
+    headers: getAuthHeaders(),
+    returnBody: true,
+  );
+
+  final jsonResponse = jsonDecode(response.body);
+  
+  if (jsonResponse['status'] == 'success') {
+    return {'success': true, 'data': jsonResponse};
+  }
+  
+  return {'success': false, 'error': jsonResponse['message'] ?? 'An error occurred'};
+}
+Error Handling
+Both in ReactJS and FlutterFlow, be sure to implement proper error handling. The API returns structured error responses, but network issues or server errors can still occur.
+
+Common Error Statuses
+401: Authentication error (invalid or expired token)
+400: Bad request (missing or invalid parameters)
+429: Rate limit reached or account temporarily blocked
+500: Server error
+Rate Limiting and Account Blocking
+The API implements rate limiting and temporary blocks to prevent Instagram from flagging the account. Be sure to check the response status and handle these cases appropriately:
+
+// Example of handling rate limiting in ReactJS
+const handleApiResponse = (response) => {
+  if (response.status === 'blocked') {
+    const remainingSeconds = response.remaining_seconds;
+    const minutes = Math.ceil(remainingSeconds / 60);
+    
+    // Show a user-friendly message
+    showMessage(`Account is temporarily blocked. Try again in ${minutes} minutes.`);
+    
+    // You might want to update the UI to reflect this state
+    setAccountBlocked(true);
+    setBlockDuration(minutes);
+  } else if (response.status === 'limit_reached') {
+    showMessage('Rate limit reached. Please try again later.');
+  }
+};
+Best Practices
+Store Token Securely:
+
+In ReactJS, consider using secure storage options beyond localStorage
+In FlutterFlow, use secure storage options for the token
+Implement Logout Functionality:
+
+Clear stored tokens and state
+Call the /reset_session endpoint if needed
+Check for Authentication Errors:
+
+Redirect to login screen if 401 errors are received
+Monitor Rate Limits:
+
+Regularly check /usage_stats to prevent hitting limits
+Display remaining limits to users
+Handle Background Operations:
+
+For endpoints that process in the background, implement periodic checking of status
+Implement Proper Loading States:
+
+Show loading indicators during API calls
+Disable buttons to prevent multiple submissions
+Conclusion
+This documentation provides the basics for integrating the Instagram Bot API into your ReactJS or FlutterFlow applications. The API offers a wide range of Instagram automation features with built-in safety mechanisms to protect accounts from being flagged or blocked.
+
+Documentación de la API de Instagram
+Introducción
+Esta documentación proporciona detalles sobre cómo usar los endpoints de la API de automatización de Instagram con ReactJS y FlutterFlow. Estos endpoints te permiten:
+
+Dar like a la última publicación de un perfil
+Obtener una lista de seguidores de un perfil
+Obtener una lista de cuentas que un perfil está siguiendo
+Obtener comentarios de una publicación
+Dar like al comentario de un usuario específico en una publicación
+Autenticación
+Todos los endpoints requieren autenticación usando un token en el encabezado. Este token se obtiene al iniciar sesión.
+
+Proceso de inicio de sesión
+Primero, llama al endpoint /login para autenticarte
+Si se requiere autenticación de dos factores (2FA), necesitarás continuar con el endpoint /verify_2fa
+Almacena el token devuelto de un inicio de sesión exitoso para solicitudes posteriores
+Endpoints de la API
+1. Dar Like a la Última Publicación
+Da like a la publicación más reciente de un perfil de Instagram especificado.
+
+Endpoint: /like_latest_post
+
+Método: POST
+
+Parámetros del formulario:
+
+username: El nombre de usuario de Instagram cuya última publicación quieres dar like
+Encabezados:
+
+token: El token de autenticación del inicio de sesión
+Respuesta:
+
+{
+  "status": "success",
+  "message": "Liked latest post of username",
+  "media_id": "2827164982736928723",
+  "media_code": "Cg7bZ2UMhsT",
+  "liked": true
+}
+2. Obtener Seguidores
+Recupera una lista de seguidores de un perfil de Instagram especificado.
+
+Endpoint: /get_followers
+
+Método: POST
+
+Parámetros del formulario:
+
+username: El nombre de usuario de Instagram del que quieres obtener los seguidores
+amount (opcional): Número máximo de seguidores a recuperar (predeterminado: 50)
+Encabezados:
+
+token: El token de autenticación del inicio de sesión
+Respuesta:
+
+{
+  "status": "success",
+  "username": "instagram_user",
+  "followers": ["follower1", "follower2", "follower3", ...],
+  "count": 50
+}
+3. Obtener Seguidos
+Recupera una lista de cuentas que un perfil de Instagram especificado está siguiendo.
+
+Endpoint: /get_following
+
+Método: POST
+
+Parámetros del formulario:
+
+username: El nombre de usuario de Instagram del que quieres obtener los seguidos
+amount (opcional): Número máximo de seguidos a recuperar (predeterminado: 50)
+Encabezados:
+
+token: El token de autenticación del inicio de sesión
+Respuesta:
+
+{
+  "status": "success",
+  "username": "instagram_user",
+  "following": ["following1", "following2", "following3", ...],
+  "count": 50
+}
+4. Obtener Comentarios
+Recupera comentarios de una publicación de Instagram especificada.
+
+Endpoint: /get_comments
+
+Método: POST
+
+Parámetros del formulario:
+
+post_url: URL de la publicación de Instagram (p.ej., "https://www.instagram.com/p/CODIGO/")
+amount (opcional): Número máximo de comentarios a recuperar (predeterminado: 50)
+Encabezados:
+
+token: El token de autenticación del inicio de sesión
+Respuesta:
+
+{
+  "status": "success",
+  "post_url": "https://www.instagram.com/p/CODIGO/",
+  "comments": [
+    {
+      "comment_id": "17892377625326209",
+      "text": "¡Gran publicación!",
+      "user": "username1",
+      "timestamp": "2023-08-15T12:34:56+00:00",
+      "like_count": 5
+    },
+    ...
+  ],
+  "count": 50
+}
+5. Dar Like a un Comentario
+Da like a un comentario de un usuario específico en una publicación.
+
+Endpoint: /like_comment
+
+Método: POST
+
+Parámetros del formulario:
+
+post_url: URL de la publicación de Instagram (p.ej., "https://www.instagram.com/p/CODIGO/")
+comment_username: Nombre de usuario del autor del comentario al que quieres dar like
+Encabezados:
+
+token: El token de autenticación del inicio de sesión
+Respuesta:
+
+{
+  "status": "success",
+  "message": "Liked comment by username1",
+  "comment_id": "17892377625326209",
+  "comment_text": "¡Gran publicación!",
+  "liked": true
+}
+Manejo de Errores
+Todos los endpoints pueden devolver respuestas de error en el siguiente formato:
+
+{
+  "status": "error",
+  "message": "Detalles del mensaje de error"
+}
+Códigos de estado de error comunes:
+
+400: Solicitud incorrecta (parámetros faltantes o inválidos)
+401: Fallo de autenticación
+429: Límite de tasa alcanzado o cuenta temporalmente bloqueada
+500: Error del servidor
+Ejemplos de Implementación
+Implementación con ReactJS
+A continuación, se muestran ejemplos de cómo usar estos endpoints con ReactJS usando Axios.
+
+Instalación
+npm install axios
+Código de Ejemplo
+import React, { useState } from 'react';
+import axios from 'axios';
+
+// URL base para la API
+const API_BASE_URL = 'http://tu-url-base-api';
+
+function AccionesInstagram() {
+  const [token, setToken] = useState(localStorage.getItem('instagram_token') || '');
+  const [username, setUsername] = useState('');
+  const [postUrl, setPostUrl] = useState('');
+  const [commentUsername, setCommentUsername] = useState('');
+  const [result, setResult] = useState(null);
+  const [error, setError] = useState(null);
+  const [loading, setLoading] = useState(false);
+
+  // Crear encabezados con token de autenticación
+  const getHeaders = () => {
+    return {
+      'token': token
+    };
+  };
+
+  // Función de inicio de sesión
+  const handleLogin = async (username, password) => {
+    setLoading(true);
+    setError(null);
+    
+    try {
+      const formData = new FormData();
+      formData.append('username', username);
+      formData.append('password', password);
+      
+      const response = await axios.post(`${API_BASE_URL}/login`, formData);
+      
+      if (response.data.status === 'success') {
+        const newToken = response.data.token;
+        setToken(newToken);
+        localStorage.setItem('instagram_token', newToken);
+        setResult(response.data);
+      } else if (response.data.status === 'needs_verification') {
+        // Manejar verificación 2FA
+        setResult(response.data);
+      }
+    } catch (err) {
+      setError(err.response?.data?.message || 'Ocurrió un error durante el inicio de sesión');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Dar like a la última publicación
+  const likeLatestPost = async () => {
+    if (!username) {
+      setError('Se requiere nombre de usuario');
+      return;
+    }
+    
+    setLoading(true);
+    setError(null);
+    
+    try {
+      const formData = new FormData();
+      formData.append('username', username);
+      
+      const response = await axios.post(
+        `${API_BASE_URL}/like_latest_post`, 
+        formData,
+        { headers: getHeaders() }
+      );
+      
+      setResult(response.data);
+    } catch (err) {
+      setError(err.response?.data?.message || 'Ocurrió un error');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Obtener seguidores
+  const getFollowers = async () => {
+    if (!username) {
+      setError('Se requiere nombre de usuario');
+      return;
+    }
+    
+    setLoading(true);
+    setError(null);
+    
+    try {
+      const formData = new FormData();
+      formData.append('username', username);
+      formData.append('amount', 50); // Puedes hacer de esto un parámetro
+      
+      const response = await axios.post(
+        `${API_BASE_URL}/get_followers`, 
+        formData,
+        { headers: getHeaders() }
+      );
+      
+      setResult(response.data);
+    } catch (err) {
+      setError(err.response?.data?.message || 'Ocurrió un error');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Obtener seguidos
+  const getFollowing = async () => {
+    if (!username) {
+      setError('Se requiere nombre de usuario');
+      return;
+    }
+    
+    setLoading(true);
+    setError(null);
+    
+    try {
+      const formData = new FormData();
+      formData.append('username', username);
+      formData.append('amount', 50); // Puedes hacer de esto un parámetro
+      
+      const response = await axios.post(
+        `${API_BASE_URL}/get_following`, 
+        formData,
+        { headers: getHeaders() }
+      );
+      
+      setResult(response.data);
+    } catch (err) {
+      setError(err.response?.data?.message || 'Ocurrió un error');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Obtener comentarios
+  const getComments = async () => {
+    if (!postUrl) {
+      setError('Se requiere URL de la publicación');
+      return;
+    }
+    
+    setLoading(true);
+    setError(null);
+    
+    try {
+      const formData = new FormData();
+      formData.append('post_url', postUrl);
+      formData.append('amount', 50); // Puedes hacer de esto un parámetro
+      
+      const response = await axios.post(
+        `${API_BASE_URL}/get_comments`, 
+        formData,
+        { headers: getHeaders() }
+      );
+      
+      setResult(response.data);
+    } catch (err) {
+      setError(err.response?.data?.message || 'Ocurrió un error');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Dar like a un comentario
+  const likeComment = async () => {
+    if (!postUrl || !commentUsername) {
+      setError('Se requiere URL de la publicación y nombre de usuario del comentario');
+      return;
+    }
+    
+    setLoading(true);
+    setError(null);
+    
+    try {
+      const formData = new FormData();
+      formData.append('post_url', postUrl);
+      formData.append('comment_username', commentUsername);
+      
+      const response = await axios.post(
+        `${API_BASE_URL}/like_comment`, 
+        formData,
+        { headers: getHeaders() }
+      );
+      
+      setResult(response.data);
+    } catch (err) {
+      setError(err.response?.data?.message || 'Ocurrió un error');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="acciones-instagram">
+      <h2>Acciones de Instagram</h2>
+      
+      {/* Entrada de nombre de usuario */}
+      <div className="grupo-input">
+        <label>Nombre de usuario de Instagram:</label>
+        <input 
+          type="text" 
+          value={username} 
+          onChange={(e) => setUsername(e.target.value)}
+          placeholder="Ingresa nombre de usuario"
+        />
+      </div>
+      
+      {/* Botones de acción para operaciones basadas en perfil */}
+      <div className="grupo-botones">
+        <button onClick={likeLatestPost} disabled={loading || !username}>
+          Dar Like a Última Publicación
+        </button>
+        <button onClick={getFollowers} disabled={loading || !username}>
+          Obtener Seguidores
+        </button>
+        <button onClick={getFollowing} disabled={loading || !username}>
+          Obtener Seguidos
+        </button>
+      </div>
+      
+      {/* Entrada de URL de publicación */}
+      <div className="grupo-input">
+        <label>URL de Publicación:</label>
+        <input 
+          type="text" 
+          value={postUrl} 
+          onChange={(e) => setPostUrl(e.target.value)}
+          placeholder="Ingresa URL de publicación"
+        />
+      </div>
+      
+      {/* Entrada de nombre de usuario del comentario */}
+      <div className="grupo-input">
+        <label>Nombre de Usuario del Comentario:</label>
+        <input 
+          type="text" 
+          value={commentUsername} 
+          onChange={(e) => setCommentUsername(e.target.value)}
+          placeholder="Ingresa nombre de usuario del comentario"
+        />
+      </div>
+      
+      {/* Botones de acción para operaciones basadas en publicación */}
+      <div className="grupo-botones">
+        <button onClick={getComments} disabled={loading || !postUrl}>
+          Obtener Comentarios
+        </button>
+        <button onClick={likeComment} disabled={loading || !postUrl || !commentUsername}>
+          Dar Like a Comentario
+        </button>
+      </div>
+      
+      {/* Mostrar mensaje de error */}
+      {error && (
+        <div className="mensaje-error">
+          Error: {error}
+        </div>
+      )}
+      
+      {/* Mostrar resultado */}
+      {result && (
+        <div className="resultado">
+          <h3>Resultado:</h3>
+          <pre>{JSON.stringify(result, null, 2)}</pre>
+        </div>
+      )}
+      
+      {/* Indicador de carga */}
+      {loading && <div className="cargando">Cargando...</div>}
+    </div>
+  );
+}
+
+export default AccionesInstagram;
+Implementación con FlutterFlow
+Para FlutterFlow, necesitarás usar solicitudes HTTP para interactuar con la API. A continuación, se presenta una guía sobre cómo configurar esto.
+
+Solicitudes HTTP en FlutterFlow
+Añadir Acción de Solicitud HTTP:
+
+En tu proyecto de FlutterFlow, crea una acción que active una solicitud HTTP
+Establece el método HTTP en POST
+Establece la URL a tu endpoint de API
+Configura los encabezados para incluir tu token de autenticación
+Configurar Datos del Formulario:
+
+Añade los parámetros del formulario según lo requerido por cada endpoint
+Manejar la Respuesta:
+
+Analiza la respuesta JSON
+Actualiza tu UI basado en el resultado
+Maneja cualquier error
+Ejemplo de Configuración de Solicitud HTTP en FlutterFlow
+Para Dar Like a la Última Publicación:
+
+Configuración de la Solicitud:
+
+URL: http://tu-url-base-api/like_latest_post
+Método: POST
+Encabezados:
+Clave: token, Valor: {TuVariableDeToken}
+Tipo de Cuerpo: Form-Data
+Parámetros de Datos del Formulario:
+Clave: username, Valor: {VariableDeNombreDeUsuario}
+Manejo de Respuesta:
+
+Acción de Éxito: Actualizar variable de estado con datos de respuesta
+Acción de Error: Mostrar toast o actualizar variable de estado de error
+Para Obtener Seguidores:
+
+Configuración de la Solicitud:
+
+URL: http://tu-url-base-api/get_followers
+Método: POST
+Encabezados:
+Clave: token, Valor: {TuVariableDeToken}
+Tipo de Cuerpo: Form-Data
+Parámetros de Datos del Formulario:
+Clave: username, Valor: {VariableDeNombreDeUsuario}
+Clave: amount, Valor: 50 (o una variable)
+Manejo de Respuesta:
+
+Acción de Éxito: Actualizar variable de estado con lista de seguidores
+Acción de Error: Mostrar toast o actualizar variable de estado de error
+Para Dar Like a un Comentario:
+
+Configuración de la Solicitud:
+
+URL: http://tu-url-base-api/like_comment
+Método: POST
+Encabezados:
+Clave: token, Valor: {TuVariableDeToken}
+Tipo de Cuerpo: Form-Data
+Parámetros de Datos del Formulario:
+Clave: post_url, Valor: {VariableDeURLDePublicacion}
+Clave: comment_username, Valor: {VariableDeNombreDeUsuarioDeComentario}
+Manejo de Respuesta:
+
+Acción de Éxito: Actualizar variable de estado o mostrar mensaje de éxito
+Acción de Error: Mostrar toast o actualizar variable de estado de error
+Ejemplo de Lógica en FlutterFlow (Pseudocódigo)
+Cuando se hace clic en el Botón "Dar Like a Última Publicación":
+  Iniciar Estado de Carga
+  Hacer Solicitud HTTP:
+    URL: "http://tu-url-base-api/like_latest_post"
+    Método: POST
+    Encabezados: {"token": TokenAlmacenado}
+    Cuerpo: {"username": NombreDeUsuarioIngresado}
+  Al Tener Éxito:
+    Establecer Variable "mensajeResultado" a response.data.message
+    Establecer Variable "esExito" a true
+    Detener Estado de Carga
+  Al Fallar:
+    Establecer Variable "mensajeError" a response.data.message
+    Establecer Variable "esExito" a false
+    Detener Estado de Carga
+Limitación de Tasa
+La API implementa limitación de tasa para evitar que Instagram bloquee tu cuenta. Ten en cuenta estos límites al llamar a los endpoints:
+
+Operaciones de Like: Limitadas a alrededor de 10-50 por hora y 100-200 por día
+Operaciones de Seguir: Limitadas a alrededor de 5-30 por hora y 100-150 por día
+Operaciones de Mensaje: Limitadas a alrededor de 2-4 por hora y 35-60 por día
+Los límites exactos dependen de la configuración del nivel de actividad de tu cuenta (seguro, normal o agresivo).
+
+Mejores Prácticas
+Manejar la Autenticación Adecuadamente:
+
+Almacenar el token de forma segura
+Implementar renovación de token adecuada o reinicio de sesión cuando sea necesario
+Implementar Manejo de Errores:
+
+Siempre verificar el estado de la respuesta
+Mostrar mensajes de error significativos a los usuarios
+Manejar errores de limitación de tasa adecuadamente
+Respetar los Límites de Tasa:
+
+Implementar períodos de enfriamiento entre acciones
+No enviar solicitudes en exceso para evitar bloqueos de cuenta
+Experiencia de Usuario:
+
+Mostrar indicadores de carga durante las llamadas a la API
+Proporcionar retroalimentación clara sobre el éxito o fracaso de la acción
+Implementar mecanismos de reintento para fallos temporales

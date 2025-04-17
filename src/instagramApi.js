@@ -346,5 +346,60 @@ for (let pair of formData.entries()) {
   likeLatestPost: (username) => apiRequest("/like_latest_post", { username }),
   
   likeComment: (postUrl, commentUsername) => 
-    apiRequest("/like_comment", { post_url: postUrl, comment_username: commentUsername })
+    apiRequest("/like_comment", { post_url: postUrl, comment_username: commentUsername }),
+  
+  // >>> NUEVA FUNCIÓN <<<
+  /**
+   * Gestiona una cola de operación específica (pausar, reanudar, cancelar).
+   * @param {string} action - La acción a realizar ('pause', 'resume', 'cancel').
+   * @param {string} campaignId - El ID de la campaña (usado como queue_id).
+   * @param {string} authToken - El token de autenticación JWT.
+   * @returns {Promise<object>} - La respuesta de la API.
+   */
+  manageOperationQueue: async (action, campaignId, authToken) => {
+    console.log(`manageOperationQueue called (FormData):`, { action, campaignId, hasToken: !!authToken }); // Log FormData attempt
+
+    if (!authToken) {
+      console.error("manageOperationQueue: Auth token is missing!");
+      throw new Error("Authentication token is required."); 
+    }
+
+    // Volver a usar FormData
+    const formData = new FormData();
+    formData.append('action', action);
+    formData.append('queue_id', campaignId);
+
+    try {
+      const headers = {
+        'Authorization': `Bearer ${authToken}`,
+        // NO establecer Content-Type manualmente para FormData
+      };
+      
+      console.log("Request headers for manageOperationQueue (FormData):", {
+         Authorization: "Present (Bearer - hidden)"
+      });
+      console.log("Request body (FormData):", { action: formData.get('action'), queue_id: formData.get('queue_id') });
+
+      const response = await fetch(`${API_BASE_URL}/manage_operation_queue`, { 
+        method: 'POST',
+        headers: headers,
+        body: formData, // Enviar FormData
+      });
+
+      console.log(`Response status for manageOperationQueue (${action}, ${campaignId}):`, response.status);
+      const result = await response.json();
+      if (!response.ok) {
+        const errorMessage = result?.message || `Error HTTP: ${response.status} ${response.statusText}`;
+        console.error(`manageOperationQueue error response:`, result);
+        throw new Error(errorMessage);
+      }
+      console.log(`manageOperationQueue success response:`, result);
+      return result;
+
+    } catch (error) {
+      console.error(`Error en petición a /manage_operation_queue:`, error);
+      throw error; 
+    }
+  },
+  // >>> FIN NUEVA FUNCIÓN <<<
 };

@@ -1,93 +1,64 @@
 import { useState, useEffect } from "react";
 import PropTypes from 'prop-types';
-import { FaTimes, FaTrash } from "react-icons/fa";
+import { FaTimes, FaTrash, FaInfoCircle, FaCalendarAlt, FaTasks, FaLink, FaEnvelope, FaComment, FaImage } from "react-icons/fa";
 import { doc, deleteDoc } from "firebase/firestore";
 import { db } from "../firebaseConfig";
 import { getCampaignDetails } from "../campaignStore";
+
+// Helper para formatear fechas (simplificado si ya existe fuera)
+const formatDate = (dateParam) => {
+  if (!dateParam) return "N/A";
+  const date = dateParam instanceof Date ? dateParam : dateParam?.toDate ? dateParam.toDate() : new Date(dateParam);
+  if (isNaN(date.getTime())) return "Fecha inválida";
+  return date.toLocaleString('es-ES', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit'
+  });
+};
+
+// Helper para formatear duración
+const formatDuration = (start, end) => {
+  if (!start || !end) return "N/A";
+  const startDate = start instanceof Date ? start : start?.toDate ? start.toDate() : new Date(start);
+  const endDate = end instanceof Date ? end : end?.toDate ? end.toDate() : new Date(end);
+  if (isNaN(startDate.getTime()) || isNaN(endDate.getTime())) return "N/A";
+  
+  const durationMs = endDate.getTime() - startDate.getTime();
+  if (durationMs < 0) return "N/A";
+
+  const seconds = Math.floor((durationMs / 1000) % 60);
+  const minutes = Math.floor((durationMs / (1000 * 60)) % 60);
+  const hours = Math.floor((durationMs / (1000 * 60 * 60)) % 24);
+  const days = Math.floor(durationMs / (1000 * 60 * 60 * 24));
+
+  let durationStr = "";
+  if (days > 0) durationStr += `${days}d `;
+  if (hours > 0) durationStr += `${hours}h `;
+  if (minutes > 0) durationStr += `${minutes}m `;
+  if (seconds >= 0) durationStr += `${seconds}s`; // Mostrar segundos siempre
+
+  return durationStr.trim() || "< 1s";
+};
 
 const CampaignDetailsModal = ({ campaignId, userId, isOpen, onClose, onDelete }) => {
   const [campaign, setCampaign] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [elapsedTime, setElapsedTime] = useState("0:00");
-  const [timerInterval, setTimerInterval] = useState(null);
-  const [batchInfo, setBatchInfo] = useState({
-  completedBatches: 0,
-  nextBatchIn: "0m 0s",
-  progress: 0
-});
 
   useEffect(() => {
-    if (isOpen && campaign?.status === 'processing' && campaign?.createdAt) {
-      // Función para actualizar el tiempo transcurrido
-      // Función mejorada para actualizar tiempo y lotes
-const updateElapsedTime = () => {
-  const now = new Date();
-  const startTime = campaign.createdAt instanceof Date 
-    ? campaign.createdAt 
-    : new Date(campaign.createdAt);
-  
-  const elapsedMs = now - startTime;
-  const minutes = Math.floor(elapsedMs / 60000);
-  const seconds = Math.floor((elapsedMs % 60000) / 1000);
-  const hours = Math.floor(minutes / 60);
-  
-  // Formatear tiempo transcurrido (igual que antes)
-  if (hours > 0) {
-    setElapsedTime(`${hours}:${(minutes % 60).toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`);
-  } else {
-    setElapsedTime(`${minutes}:${seconds.toString().padStart(2, '0')}`);
-  }
-  
-  // Calcular información de lotes
-  const elapsedHours = elapsedMs / (1000 * 60 * 60);
-  const ratePerHour = campaign.processingRatePerHour || 3;
-  const completedBatches = Math.floor(elapsedHours);
-  
-  // Tiempo hasta el siguiente lote
-  const millisToNextBatch = ((completedBatches + 1) * 60 * 60 * 1000) - elapsedMs;
-  const minutesToNext = Math.floor(millisToNextBatch / 60000);
-  const secondsToNext = Math.floor((millisToNextBatch % 60000) / 1000);
-  const nextBatchIn = `${minutesToNext}m ${secondsToNext}s`;
-  
-  // Progreso porcentual al siguiente lote
-  const progressToNext = Math.min(100, Math.round((elapsedMs % (60 * 60 * 1000)) / (60 * 60 * 10)));
-  
-  setBatchInfo({
-    completedBatches,
-    nextBatchIn,
-    progress: progressToNext
-  });
-};
-      
-      // Actualizar inmediatamente
-      updateElapsedTime();
-      
-      // Configurar intervalo para actualizar cada segundo
-      const interval = setInterval(updateElapsedTime, 1000);
-      setTimerInterval(interval);
-      
-      // Limpieza al desmontar
-      return () => {
-        if (interval) clearInterval(interval);
-      };
-    } else {
-      // Limpiar intervalo si el modal se cierra o la campaña no está en proceso
-      if (timerInterval) {
-        clearInterval(timerInterval);
-        setTimerInterval(null);
-      }
-    }
-  }, [isOpen, campaign, timerInterval]);
-  
-  useEffect(() => {
     const fetchCampaignDetails = async () => {
-      if (!isOpen || !campaignId || !userId) return;
+      if (!isOpen || !campaignId || !userId) {
+        setCampaign(null); // Resetear si se cierra o no hay ID
+        setLoading(false);
+        return;
+      }
       
       try {
         setLoading(true);
         setError("");
-        
         const campaignData = await getCampaignDetails(userId, campaignId);
         setCampaign(campaignData);
       } catch (error) {
@@ -99,21 +70,19 @@ const updateElapsedTime = () => {
     };
     
     fetchCampaignDetails();
-  }, [campaignId, userId, isOpen]);
+    // Ejecutar solo cuando cambian estas props o se abre/cierra
+  }, [campaignId, userId, isOpen]); 
   
   const handleDeleteCampaign = async () => {
     if (!window.confirm("¿Estás seguro de eliminar esta campaña? Esta acción no se puede deshacer.")) {
       return;
     }
-    
     try {
       const campaignRef = doc(db, "users", userId, "campaigns", campaignId);
       await deleteDoc(campaignRef);
-      
       if (typeof onDelete === 'function') {
         onDelete(campaignId);
       }
-      
       onClose();
     } catch (error) {
       console.error("Error al eliminar la campaña:", error);
@@ -123,329 +92,168 @@ const updateElapsedTime = () => {
   
   if (!isOpen) return null;
   
-  // Determinar si la campaña está finalizada
-  const isCompleted = campaign?.status === 'completed' || 
-                      campaign?.status === 'cancelled' || 
-                      campaign?.status === 'failed';
-
-  // Añade esto justo después de donde defines isCompleted
-const elapsedMs = campaign?.createdAt 
-? (new Date() - (campaign.createdAt instanceof Date ? campaign.createdAt : new Date(campaign.createdAt))) 
-: 0;
-  
-  // Formatear fecha
-  const formatDate = (dateObj) => {
-    if (!dateObj) return "N/A";
-    
-    const date = dateObj instanceof Date ? dateObj : new Date(dateObj);
-    return date.toLocaleString('es-ES', {
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit'
-    });
-  };
-  
-  // Obtener texto para el estado
-  const getStatusText = (status) => {
+  // --- Funciones Helper para el Render --- 
+  const getStatusInfo = (status) => {
     switch (status) {
-      case 'processing': return 'En proceso';
-      case 'paused': return 'En pausa';
-      case 'completed': return 'Completada';
-      case 'cancelled': return 'Cancelada';
-      case 'failed': return 'Fallida';
-      default: return 'Desconocido';
+      case 'processing': return { text: 'En proceso', color: 'text-green-600', icon: FaTasks };
+      case 'paused': return { text: 'Pausada', color: 'text-yellow-600', icon: FaPause }; // Reusar FaPause
+      case 'completed': return { text: 'Completada', color: 'text-blue-600', icon: FaInfoCircle };
+      case 'cancelled': return { text: 'Cancelada', color: 'text-red-600', icon: FaTimes };
+      case 'failed': return { text: 'Fallida', color: 'text-red-700 font-bold', icon: FaInfoCircle };
+      case 'scheduled': return { text: 'En Cola', color: 'text-cyan-600', icon: FaCalendarAlt };
+      default: return { text: 'Desconocido', color: 'text-gray-500', icon: FaInfoCircle };
     }
   };
   
-  // Obtener texto para el tipo de campaña
-  const getCampaignTypeText = (type) => {
+  const getCampaignTypeInfo = (type) => {
     switch (type) {
-      case 'send_messages': return 'Envío de mensajes';
-      case 'send_media': return 'Envío de multimedia';
-      case 'follow_users': return 'Seguimiento de usuarios';
-      case 'like_posts': return 'Dar likes a publicaciones';
-      case 'comment_posts': return 'Comentar publicaciones';
-      default: return type || 'Desconocido';
+      case 'send_messages': return { text: 'Envío de mensajes', icon: FaEnvelope };
+      case 'send_media': return { text: 'Envío de multimedia', icon: FaImage };
+      case 'follow_users': return { text: 'Seguimiento de usuarios', icon: FaTasks }; // Cambiar icono si quieres
+      case 'like_posts': return { text: 'Dar likes a publicaciones', icon: FaTasks }; // Cambiar icono
+      case 'comment_posts': return { text: 'Comentar publicaciones', icon: FaComment };
+      default: return { text: type || 'Desconocido', icon: FaTasks };
     }
   };
-  
+
+  // Obtener datos calculados
+  const statusInfo = campaign ? getStatusInfo(campaign.status) : getStatusInfo('');
+  const typeInfo = campaign ? getCampaignTypeInfo(campaign.campaignType) : getCampaignTypeInfo('');
+  const duration = campaign ? formatDuration(campaign.createdAt, campaign.endedAt) : "N/A";
+  const filteredCount = (campaign?.originalUserCount ?? 0) - (campaign?.filteredUsers ?? campaign?.targetUserList?.length ?? 0);
+  const targetFinalCount = campaign?.filteredUsers ?? campaign?.targetUserList?.length ?? 0;
+  const totalProcessed = campaign?.totalProcessed ?? 0;
+
+  // --- Componente de Sección --- 
+  const DetailSection = ({ title, children }) => (
+    <div className="mb-4 border border-gray-200 rounded-lg overflow-hidden">
+      <h4 className="bg-gray-50 px-4 py-2 text-sm font-semibold text-gray-700 border-b border-gray-200">{title}</h4>
+      <div className="p-4 space-y-2 text-sm">
+        {children}
+      </div>
+    </div>
+  );
+
+  // --- Componente de Item de Detalle --- 
+  const DetailItem = ({ label, value, icon: IconComponent }) => (
+    <div className="flex items-start">
+      {IconComponent && <IconComponent className="w-4 h-4 mr-2 mt-0.5 text-gray-500 flex-shrink-0" />}
+      <span className="font-medium text-gray-600 mr-2">{label}:</span>
+      <span className="text-black break-words">{value || "N/A"}</span>
+    </div>
+  );
+
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-50">
-      <div className="bg-white rounded-2xl w-full max-w-lg max-h-[90vh] overflow-hidden shadow-xl">
+    <div className="fixed inset-0 bg-black bg-opacity-60 flex justify-center items-center z-50 p-4">
+      <div className="bg-white rounded-xl w-full max-w-lg max-h-[90vh] overflow-hidden shadow-2xl flex flex-col">
         {/* Header */}
-        <div className="flex justify-between items-center p-5 border-b">
-          <h2 className="text-xl font-medium text-black">
+        <div className="flex justify-between items-center p-4 border-b bg-gray-50 rounded-t-xl">
+          <h2 className="text-lg font-semibold text-gray-800 flex items-center">
+            <FaInfoCircle className="mr-2 text-indigo-600" />
             Detalles de Campaña
           </h2>
           <button
             onClick={onClose}
-            className="text-gray-500 hover:text-gray-700 bg-transparent border-0 p-2 rounded-full hover:bg-gray-100"
+            className="text-gray-400 hover:text-gray-600 p-1 rounded-full hover:bg-gray-200"
           >
-            <FaTimes size={16} />
+            <FaTimes size={18} />
           </button>
         </div>
         
-        {/* Contenido */}
-        <div className="p-5 overflow-y-auto max-h-[60vh]">
+        {/* Contenido Scrollable */}
+        <div className="p-5 overflow-y-auto flex-grow">
           {loading ? (
-            <div className="flex justify-center items-center h-32">
+            <div className="flex justify-center items-center h-40">
               <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-indigo-600"></div>
-              <span className="ml-2 text-gray-600">Cargando detalles...</span>
             </div>
           ) : error ? (
-            <div className="text-center py-6 px-4 bg-red-50 text-red-600 rounded-lg">
+            <div className="text-center py-6 px-4 bg-red-50 text-red-700 rounded-lg border border-red-200">
               {error}
             </div>
           ) : campaign ? (
-            <div className="space-y-4">
-              {/* Información básica */}
-              <div className="bg-indigo-50 p-4 rounded-lg">
-                <h3 className="font-semibold text-lg text-indigo-800 mb-2">
-                  {campaign.name || "Campaña sin nombre"}
-                </h3>
-                <div className="grid grid-cols-2 gap-3 text-sm">
-                  <div>
-                    <span className="font-medium text-gray-700">Tipo:</span>{" "}
-                    <span className="text-black">{getCampaignTypeText(campaign.campaignType)}</span>
-                  </div>
-                  <div>
-                    <span className="font-medium text-gray-700">Estado:</span>{" "}
-                    <span className={`${
-                      campaign.status === 'processing' ? 'text-green-600' :
-                      campaign.status === 'paused' ? 'text-yellow-600' :
-                      'text-red-600'
-                    }`}>{getStatusText(campaign.status)}</span>
-                  </div>
-                  <div>
-                    <span className="font-medium text-gray-700">Creada:</span>{" "}
-                    <span className="text-black">{formatDate(campaign.createdAt)}</span>
-                  </div>
-                  <div>
-                    <span className="font-medium text-gray-700">Última actualización:</span>{" "}
-                    <span className="text-black">{formatDate(campaign.lastUpdated)}</span>
-                  </div>
-                  {campaign.endedAt && (
-                    <div className="col-span-2">
-                      <span className="font-medium text-gray-700">Finalizada:</span>{" "}
-                      <span className="text-black">{formatDate(campaign.endedAt)}</span>
-                    </div>
-                  )}
-                </div>
-              </div>
-              
-              
-              {/* Progreso */}
-<div className="bg-gray-50 p-4 rounded-lg">
-  <div className="flex justify-between mb-1">
-    <span className="font-medium text-gray-700">Progreso:</span>
-    <span className="text-black">{campaign.progress || 0}%</span>
-  </div>
-  <div className="w-full bg-gray-200 rounded-full h-2.5 mb-2">
-    <div 
-      className={`h-2.5 rounded-full ${
-        campaign.status === 'processing' ? 'bg-indigo-600' :
-        campaign.status === 'paused' ? 'bg-yellow-500' :
-        campaign.status === 'completed' ? 'bg-green-500' :
-        'bg-red-500'
-      }`}
-      style={{ width: `${campaign.progress || 0}%` }}
-    ></div>
-  </div>
-  
-  {campaign.status === 'processing' && (
-  <div className="mt-3 text-sm">
-    {/* Timer en tiempo real */}
-    <div className="flex justify-between mb-1">
-      <span className="text-gray-600">Tiempo transcurrido:</span>
-      <span className="text-black font-medium bg-blue-50 px-2 py-1 rounded">
-        {elapsedTime}
-      </span>
-    </div>
-    
-    <div className="flex justify-between mb-1">
-      <span className="text-gray-600">Tasa de procesamiento:</span>
-      <span className="text-black font-medium">{campaign.processingRatePerHour || 3} ops/hora</span>
-    </div>
-    
-    {/* Información de lotes - NUEVO */}
-    <div className="flex justify-between mb-1">
-      <span className="text-gray-600">Lotes completados:</span>
-      <span className="text-black font-medium">{batchInfo.completedBatches}</span>
-    </div>
-    
-    <div className="flex justify-between mb-1">
-      <span className="text-gray-600">Próximo lote en:</span>
-      <span className="text-black font-medium">{batchInfo.nextBatchIn}</span>
-    </div>
-    
-    {/* Barra de progreso para el próximo lote - NUEVO */}
-    <div className="mt-2 mb-3">
-      <div className="flex justify-between text-xs mb-1">
-        <span>Progreso hacia el próximo lote</span>
-        <span>{batchInfo.progress}%</span>
-      </div>
-      <div className="w-full bg-gray-200 rounded-full h-1.5">
-        <div 
-          className="h-1.5 rounded-full bg-indigo-500"
-          style={{ width: `${batchInfo.progress}%` }}
-        ></div>
-      </div>
-    </div>
-    
-    {/* Resto del código... */}
-  </div>
-)}
-      
-      {campaign.estimatedCompletionTime && (
-        <div className="flex justify-between">
-          <span className="text-gray-600">Finalización estimada:</span>
-          <span className="text-black font-medium">
-            {formatDate(campaign.estimatedCompletionTime)}
-          </span>
-        </div>
-      )}
-      
-      {campaign.estimatedCompletionHours !== undefined && (
-        <div className="flex justify-between">
-          <span className="text-gray-600">Duración estimada:</span>
-          <span className="text-black font-medium">
-            {campaign.estimatedCompletionHours === 1 
-              ? '~1 hora' 
-              : `~${campaign.estimatedCompletionHours} horas`}
-          </span>
-        </div>
-      )}
-  
-</div>
-              
-              {/* Usuarios */}
-              <div className="border border-gray-200 rounded-lg">
-                <div className="bg-gray-50 p-4 border-b border-gray-200">
-                  <h3 className="font-medium text-gray-800">Usuarios a interactuar</h3>
-                </div>
-                <div className="p-4">
-                  <div className="flex justify-between mb-2">
-                    <span className="text-gray-700">Total de usuarios:</span>
-                    <span className="font-medium text-black">{campaign.targetCount || 0}</span>
-                  </div>
-                  
-                  {campaign.totalProcessed !== undefined && (
-                <div className="flex justify-between mb-2">
-                  <span className="text-gray-700">Usuarios procesados:</span>
-                  <span className="font-medium text-black">
-                    {campaign.totalProcessed || 0}
-                    {campaign.status === 'processing' && (
-                      <span className="text-gray-500 text-xs">
-                        {" "}(próximo lote: {Math.min((Math.floor(elapsedMs / (1000 * 60 * 60)) + 1) * (campaign.processingRatePerHour || 3), campaign.targetCount || 0)})
-                      </span>
-                    )}
-                  </span>
-                </div>
+            <div className="space-y-3">
+              {/* Información Básica */}
+              <DetailSection title="Información Básica">
+                <DetailItem label="Nombre" value={campaign.name} />
+                <DetailItem label="Estado" value={statusInfo.text} icon={statusInfo.icon} />
+                <DetailItem label="Tipo" value={typeInfo.text} icon={typeInfo.icon} />
+                <DetailItem label="Creada" value={formatDate(campaign.createdAt)} icon={FaCalendarAlt} />
+                {campaign.endedAt && <DetailItem label="Finalizada" value={formatDate(campaign.endedAt)} icon={FaCalendarAlt} />}
+                {campaign.endedAt && <DetailItem label="Duración" value={duration} />}
+              </DetailSection>
+
+              {/* Estadísticas de Ejecución */}
+              <DetailSection title="Estadísticas">
+                <DetailItem label="Objetivo" value={campaign.objective || 'No especificado'} />
+                <DetailItem label="Usuarios Iniciales" value={campaign.originalUserCount} />
+                <DetailItem label="Usuarios Filtrados (Blacklist)" value={filteredCount < 0 ? 0 : filteredCount} />
+                <DetailItem label="Usuarios Objetivo Final" value={targetFinalCount} />
+                <DetailItem label="Procesados" value={`${totalProcessed} / ${targetFinalCount}`} />
+              </DetailSection>
+
+              {/* Detalles de la Tarea */}
+              <DetailSection title="Detalles de Tarea">
+                 <DetailItem 
+                    label="Enlace/Perfil" 
+                    icon={FaLink} 
+                    value={
+                      campaign.targetLink ? (
+                        <a 
+                          href={campaign.targetLink} 
+                          target="_blank" 
+                          rel="noopener noreferrer"
+                          className="text-indigo-600 hover:underline break-all"
+                        >
+                          {campaign.targetLink}
+                        </a>
+                      ) : (
+                        "N/A"
+                      )
+                    }
+                  />
+                 {campaign.campaignType === 'send_messages' && campaign.message && 
+                   <DetailItem label="Mensaje" value={campaign.message} icon={FaEnvelope} />
+                 }
+                 {campaign.campaignType === 'comment_posts' && campaign.message && 
+                   <DetailItem label="Comentario" value={campaign.message} icon={FaComment} />
+                 }
+                 {campaign.campaignType === 'send_media' && 
+                   <>
+                    <DetailItem label="Tipo Media" value={campaign.mediaType} icon={FaImage} />
+                    <DetailItem label="Texto Adjunto" value={campaign.mediaCaption} />
+                   </>
+                 }
+              </DetailSection>
+
+              {/* Resultados/Errores */}
+              {(campaign.status === 'failed' || campaign.status === 'cancelled') && (
+                <DetailSection title="Resultado / Errores">
+                  {campaign.status === 'failed' && 
+                    <DetailItem label="Error" value={campaign.error || 'Error desconocido'} icon={FaInfoCircle} />
+                  }
+                  {campaign.status === 'cancelled' && 
+                    <DetailItem label="Resultado" value="Cancelada manualmente" icon={FaInfoCircle} />
+                  }
+                </DetailSection>
               )}
-                  
-                  {campaign.filteredUsers !== undefined && (
-                    <div className="flex justify-between mb-2">
-                      <span className="text-gray-700">Usuarios filtrados:</span>
-                      <span className="font-medium text-black">{campaign.filteredUsers || 0}</span>
-                    </div>
-                  )}
-                  
-                  {campaign.targetUsers && campaign.targetUsers.length > 0 && (
-                    <div className="mt-3">
-                      <p className="text-gray-700 mb-2">Lista de usuarios:</p>
-                      <div className="max-h-32 overflow-y-auto bg-gray-50 p-2 rounded-md text-sm">
-                        {campaign.targetUsers.map((user, index) => (
-                          <div key={index} className="mb-1 text-gray-800">
-                            {user}
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </div>
-              
-              {/* Resultados (solo si está completa) */}
-              {isCompleted && (
-                <div className="border border-gray-200 rounded-lg">
-                  <div className="bg-gray-50 p-4 border-b border-gray-200">
-                    <h3 className="font-medium text-gray-800">Resultados finales</h3>
-                  </div>
-                  <div className="p-4">
-                    {campaign.successCount !== undefined && (
-                      <div className="flex justify-between mb-2">
-                        <span className="text-gray-700">Operaciones exitosas:</span>
-                        <span className="font-medium text-green-600">{campaign.successCount || 0}</span>
-                      </div>
-                    )}
-                    
-                    {campaign.failedCount !== undefined && (
-                      <div className="flex justify-between mb-2">
-                        <span className="text-gray-700">Operaciones fallidas:</span>
-                        <span className="font-medium text-red-600">{campaign.failedCount || 0}</span>
-                      </div>
-                    )}
-                    
-                    {campaign.error && (
-                      <div className="mt-2 p-2 bg-red-50 rounded-md text-red-600 text-sm">
-                        Error: {campaign.error}
-                      </div>
-                    )}
-                  </div>
-                </div>
-              )}
-              
-              {/* Información adicional */}
-              {campaign.postLink && (
-                <div className="border border-gray-200 rounded-lg">
-                  <div className="bg-gray-50 p-4 border-b border-gray-200">
-                    <h3 className="font-medium text-gray-800">Enlace objetivo</h3>
-                  </div>
-                  <div className="p-4">
-                    <a 
-                      href={campaign.postLink} 
-                      target="_blank" 
-                      rel="noopener noreferrer" 
-                      className="text-indigo-600 hover:underline break-words"
-                    >
-                      {campaign.postLink}
-                    </a>
-                  </div>
-                </div>
-              )}
+
             </div>
           ) : (
-            <div className="text-center py-6">
-              <p className="text-gray-500">No se encontraron detalles para esta campaña.</p>
+            <div className="text-center py-6 px-4 text-gray-500">
+              No se encontraron datos para esta campaña.
             </div>
           )}
         </div>
-        
-        {/* Footer con botones */}
-        <div className="p-4 border-t flex justify-between items-center">
-          <div>
-            {/* Botón de eliminar - visible para todas pero deshabilitado si no está completada */}
-            <button 
-              onClick={isCompleted ? handleDeleteCampaign : undefined}
-              className={`flex items-center px-4 py-2 rounded-lg transition ${
-                isCompleted 
-                  ? "bg-red-50 text-red-600 hover:bg-red-100 cursor-pointer" 
-                  : "bg-gray-100 text-gray-400 cursor-not-allowed"
-              }`}
-              disabled={!isCompleted}
-              title={isCompleted ? "Eliminar campaña" : "Solo se pueden eliminar campañas finalizadas"}
-            >
-              <FaTrash className="mr-2" size={14} />
-              Eliminar campaña
-            </button>
-          </div>
-          <button 
-            onClick={onClose}
-            className="px-6 py-2 bg-indigo-900 text-white rounded-lg hover:bg-indigo-800 transition"
+
+        {/* Footer con botón de eliminar */}
+        <div className="p-4 border-t bg-gray-50 rounded-b-xl flex justify-end">
+          <button
+            onClick={handleDeleteCampaign}
+            disabled={loading}
+            className="px-4 py-2 bg-red-600 text-white text-sm font-medium rounded-lg hover:bg-red-700 disabled:opacity-50 flex items-center"
           >
-            Cerrar
+            <FaTrash className="mr-2" />
+            Eliminar Campaña
           </button>
         </div>
       </div>
@@ -454,11 +262,11 @@ const elapsedMs = campaign?.createdAt
 };
 
 CampaignDetailsModal.propTypes = {
-  campaignId: PropTypes.string,
-  userId: PropTypes.string,
+  campaignId: PropTypes.string.isRequired,
+  userId: PropTypes.string.isRequired,
   isOpen: PropTypes.bool.isRequired,
   onClose: PropTypes.func.isRequired,
-  onDelete: PropTypes.func
+  onDelete: PropTypes.func // onDelete es opcional
 };
 
 export default CampaignDetailsModal;

@@ -7,7 +7,13 @@ import logApiRequest from "../requestLogger";
 import { instagramApi } from "../instagramApi"; 
 import { checkBlacklistedUsers } from "../blacklistUtils";
 import { createCampaignOptions, startCampaignMonitoring } from "../campaignIntegration";
-import { createCampaign as createCampaignStore, updateCampaign, ensureUserExists } from '../campaignStore';
+import { 
+  createCampaign as createCampaignStore, 
+  updateCampaign, 
+  ensureUserExists, 
+  getLatestProcessingCampaign,
+  activateCampaign
+} from '../campaignStore';
 import WhitelistSelector from './WhitelistSelector';
 
 // Componentes
@@ -17,6 +23,18 @@ import MediaPanel from './MediaPanel';
 import LikesPanel from './LikesPanel';
 import BlacklistModal from './BlacklistModal';
 import LoadingOverlay from './LoadingOverlay';
+
+// Helper para formatear fechas
+const formatDateTime = (date) => {
+  if (!date || !(date instanceof Date)) return "";
+  return date.toLocaleString('es-ES', { 
+    day: '2-digit', 
+    month: '2-digit', 
+    year: 'numeric', 
+    hour: '2-digit', 
+    minute: '2-digit' 
+  });
+};
 
 const NuevaCampanaModal = ({ isOpen, onClose, user, instagramToken }) => {
   // Estados principales
@@ -397,775 +415,184 @@ const NuevaCampanaModal = ({ isOpen, onClose, user, instagramToken }) => {
     }
   };
   
-  // Funciones para acciones principales
-  const followAllUsers = async () => {
-    if (result.length === 0) {
-      setError("No hay usuarios para seguir");
-      return;
+  // --- Función Auxiliar para Preparar y Programar/Iniciar Campaña (Lógica de Cola Estricta) ---
+  const prepareAndScheduleCampaign = async (taskType, taskSpecificData) => {
+    if (!user?.uid || !instagramToken) { // Necesitamos token para activar inmediatamente
+      setError("Debes iniciar sesión y tener una sesión de Instagram activa.");
+      return { scheduled: false, started: false };
     }
-    
-    const result = await checkBlacklistedUsers(users, user, (msg) => setError(msg), "NuevaCampanaModal");
-    updateFilteredUsersState(result);
-  
-    if (result.length === 0) {
-      setError("Todos los usuarios están en listas negras. No se siguió a ningún usuario.");
-      return;
-    }
-  
-    setLoading(true);
-    setError("");
-    updateProgress(0, "Iniciando proceso de seguimiento...");
-    
-    let campaignId = null;
-    let stopMonitoring = null;
-    
-    try {
-      updateProgress(10, "Preparando campaña de seguimiento...");
-      
-      if (user?.uid) {
 
-        const effectiveCampaignName = campaignName || `Mensajes a ${result.length} usuarios - ${new Date().toLocaleDateString()}`;
+    // 1. Validación y filtro blacklist (sin cambios)
+    const result = await checkBlacklistedUsers(users, user, (msg) => setError(msg), "NuevaCampanaModal");
+    updateFilteredUsersState(result);
+    if (result.length === 0) {
+      setError("Todos los usuarios aplicables están en listas negras.");
+      return { scheduled: false, started: false };
+    }
 
-        const campaignOptions = createCampaignOptions({
-          type: "send_messages",
-          name: effectiveCampaignName,
-          users: result,
-          endpoint: "/enviar_mensajes_multiple",
-          templateName: selectedTemplate?.name || null,
-          postLink: targetLink,
-          message: mensaje.substring(0, 100) + (mensaje.length > 100 ? "..." : "")
-        });
-        
-        campaignId = await createCampaignStore(user.uid, campaignOptions);
-        stopMonitoring = startCampaignMonitoring(user.uid, campaignId, { token: instagramToken });
-      }
-      
-      updateProgress(20, "Registrando operación...");
-      
-      if (user) {
-        await logApiRequest({
-          endpoint: "/seguir_usuarios",
-          requestData: { usuarios_count: users.length, campaign_id: campaignId },
-          userId: user.uid,
-          status: "pending",
-          source: "NuevaCampanaModal",
-          metadata: {
-            action: "follow_users",
-            usersCount: users.length,
-            postLink: targetLink,
-            campaignId: campaignId
-          }
-        });
-      }
-      
-      updateProgress(40, `Enviando solicitud para seguir a ${result.length} usuarios...`);
-      const data = await instagramApi.followUsers(result, instagramToken);
-      updateProgress(70, "Procesando resultados...");
-      
-      if (campaignId) {
-        await updateCampaign(user.uid, campaignId, {
-          progress: 10,
-          initialResponse: data,
-          filteredUsers: result.length,
-          blacklistedUsers: users.length - result.length
-        });
-      }
-      
-      updateProgress(85, "Finalizando operación...");
-      
-      if (user) {
-        await logApiRequest({
-          endpoint: "/seguir_usuarios",
-          requestData: { 
-            usuarios_count: users.length,
-            filtered_users_count: result.length,
-            campaign_id: campaignId
-          },
-          userId: user.uid,
-          responseData: { 
-            status: data.status,
-            followedCount: data.followed_count || 0,
-            skippedCount: data.skipped_count || 0,
-            blacklistedCount: users.length - result.length,
-            campaignId: campaignId
-          },
-          status: data.status === "success" ? "success" : "completed",
-          source: "NuevaCampanaModal",
-          metadata: {
-            action: "follow_users",
-            usersCount: users.length,
-            filteredUsersCount: result.length,
-            blacklistedCount: users.length - result.length,
-            postLink: targetLink,
-            followedCount: data.followed_count || 0,
-            skippedCount: data.skipped_count || 0,
-            campaignId: campaignId
-          }
-        });
-      }
-      
-      updateProgress(100, `Seguimiento de usuarios iniciado exitosamente`);
-      setError(null);
-      alert("Seguimiento en proceso. Se ha creado una campaña para seguir el progreso.");
-      setStep(4);
-      
-    } catch (error) {
-      handleTaskError(error, campaignId, stopMonitoring, "/seguir_usuarios", "follow_users");
-    } finally {
-      setLoading(false);
-    }
-  };
-  
-  const sendMessages = async () => {
-    if (users.length === 0) {
-      setError("No hay usuarios para enviar mensajes");
-      return;
-    }
-    
-    // Solo validar mensaje vacío si no estamos enviando media
-    if (!tasks.enviarMedia && (!mensaje || !mensaje.trim())) {
-      console.error("Empty message detected:", mensaje);
-      setError("El mensaje no puede estar vacío. Por favor, escribe un mensaje.");
-      return;
-    }
-    
-    // Log message content for debugging
-    console.log("Sending message content:", mensaje);
-    console.log("Message length:", mensaje ? mensaje.length : 0);
-    
-    const result = await checkBlacklistedUsers(users, user, (msg) => setError(msg), "NuevaCampanaModal");
-    updateFilteredUsersState(result);
-    
-    if (result.length === 0) {
-      setError("Todos los usuarios están en listas negras. No se enviaron mensajes.");
-      return;
-    }
-    
-    // Add debug logging
-    console.log("Message to send:", mensaje);
-    console.log("Original users:", users);
-    console.log("Filtered users for sending:", result);
-    
-    setLoading(true);
-    setError("");
-    updateProgress(0, "Iniciando envío de mensajes...");
-    
-    let campaignId = null;
-    let stopMonitoring = null;
-    
+    // 2. Verificar si hay una campaña activa
+    let needsScheduling = false;
     try {
-      updateProgress(10, "Preparando campaña de mensajes...");
-      
-      if (user?.uid) {
-        // Definir un nombre efectivo para la campaña - ESTO ES LO QUE FALTA
-        const effectiveCampaignName = campaignName || `Mensajes a ${result.length} usuarios - ${new Date().toLocaleDateString()}`;
-        
-        // En sendMessages, creación de opciones de campaña
-        const campaignOptions = createCampaignOptions({
-          type: "send_messages",
-          name: effectiveCampaignName,  // Ahora usa la variable definida arriba
-          users: result,  
-          endpoint: "/enviar_mensajes_multiple",
-          templateName: selectedTemplate?.name || null,
-          postLink: targetLink,
-          message: mensaje ? mensaje.substring(0, 100) + (mensaje.length > 100 ? "..." : "") : ""
-        });
-        
-        try {
-          await ensureUserExists(user.uid);
-          campaignId = await createCampaignStore(user.uid, campaignOptions);
-          
-          if (campaignId) {
-            stopMonitoring = startCampaignMonitoring(user.uid, campaignId, { token: instagramToken });
-          }
-        } catch (campaignError) {
-          console.error("Error al crear la campaña:", campaignError);
-        }
+      const latestProcessing = await getLatestProcessingCampaign(user.uid);
+      if (latestProcessing) {
+        console.log(`Campaña activa (${latestProcessing.id}) encontrada. La nueva campaña será programada.`);
+        needsScheduling = true;
+      } else {
+        console.log("No hay campañas activas. Iniciando inmediatamente.");
       }
-      
-      updateProgress(20, "Registrando operación...");
-      
-      if (user) {
-        await logApiRequest({
-          endpoint: "/enviar_mensajes_multiple",
-          requestData: { 
-            usuarios_count: result.length,  // CHANGED: Use filtered count instead of total count
-            mensaje_length: mensaje.length,
-            template_id: selectedTemplate ? selectedTemplate.id : null,
-            campaign_id: campaignId || null
-          },
-          userId: user.uid,
-          status: "pending",
-          source: "NuevaCampanaModal",
-          metadata: {
-            action: "send_messages",
-            usersCount: result.length,  // CHANGED: Use filtered count
-            messageLength: mensaje.length,
-            templateId: selectedTemplate ? selectedTemplate.id : null,
-            templateName: selectedTemplate ? selectedTemplate.name : null, 
-            postLink: targetLink || null,
-            campaignId: campaignId || null
-          }
-        });
-      }
-      
-      updateProgress(40, `Enviando mensajes a ${result.length} usuarios...`);
-      const data = await instagramApi.sendMessages(result, mensaje, false, instagramToken);
-      updateProgress(70, "Procesando resultados...");
-      
-      if (campaignId) {
-        await updateCampaign(user.uid, campaignId, {
-          progress: 80,
-          initialResponse: data,
-          filteredUsers: result.length,
-          blacklistedUsers: users.length - result.length
-        });
-      }
-      
-      updateProgress(90, "Finalizando envío de mensajes...");
-      
-      if (user) {
-        await logApiRequest({
-          endpoint: "/enviar_mensajes_multiple",
-          requestData: { 
-            usuarios_count: users.length,
-            mensaje_length: mensaje.length,
-            template_id: selectedTemplate?.id,
-            filtered_users_count: result.length,
-            campaign_id: campaignId
-          },
-          userId: user.uid,
-          responseData: { 
-            status: data.status,
-            sentCount: data.sent_count || 0,
-            failedCount: data.failed_count || 0,
-            blacklistedCount: users.length - result.length,
-            campaignId: campaignId
-          },
-          status: data.status === "success" ? "success" : "completed",
-          source: "NuevaCampanaModal",
-          metadata: {
-            action: "send_messages",
-            usersCount: users.length,
-            filteredUsersCount: result.length,
-            blacklistedCount: users.length - result.length,
-            messageLength: mensaje.length,
-            templateId: selectedTemplate?.id,
-            templateName: selectedTemplate?.name,
-            postLink: targetLink,
-            sentCount: data.sent_count || 0,
-            failedCount: data.failed_count || 0,
-            campaignId: campaignId
-          }
-        });
-      }
-      
-      updateProgress(100, `Mensajes enviados exitosamente a ${data.sent_count || 0} usuarios`);
-      setError(null);
-      setStep(4);
-      
-    } catch (error) {
-      handleTaskError(error, campaignId, stopMonitoring, "/enviar_mensajes_multiple", "send_messages");
-    } finally {
-      setLoading(false);
-    }
-  };
-  
-  const commentOnLatestPosts = async () => {
-    if (users.length === 0) {
-      setError("No hay usuarios para comentar en sus publicaciones");
-      return;
+    } catch (err) {
+      console.error("Error al verificar campaña activa, procediendo a iniciar inmediatamente por seguridad:", err);
+      needsScheduling = false; // Fallback: intentar iniciar
     }
     
-    if (!mensaje.trim()) {
-      setError("Debes escribir un comentario para enviar");
-      return;
-    }
-    
-    const result = await checkBlacklistedUsers(users, user, (msg) => setError(msg), "NuevaCampanaModal");
-    updateFilteredUsersState(result);
-  
-    if (result.length === 0) {
-      setError("Todos los usuarios están en listas negras. No se realizaron comentarios.");
-      return;
-    }
-    
-    setLoading(true);
-    setError("");
-    updateProgress(0, "Iniciando proceso de comentarios...");
-    
-    let campaignId = null;
-    let stopMonitoring = null;
-    
-    try {
-      updateProgress(10, "Preparando campaña de comentarios...");
-      
-      if (user?.uid) {
-        const campaignOptions = createCampaignOptions({
-          type: "comment_posts",
-          users: users,
-          endpoint: "/comment_latest_post",
-          message: mensaje.substring(0, 50) + "...",
-          postLink: targetLink
-        });
-        
-        campaignId = await createCampaignStore(user.uid, campaignOptions);
-        stopMonitoring = startCampaignMonitoring(user.uid, campaignId, { token: instagramToken });
-      }
-      
-      updateProgress(20, "Registrando operación...");
-      
-      if (user) {
-        await logApiRequest({
-          endpoint: "/comment_latest_post",
-          requestData: { 
-            usuarios_count: users.length,
-            message: mensaje,
-            campaign_id: campaignId
-          },
-          userId: user.uid,
-          status: "pending",
-          source: "NuevaCampanaModal",
-          metadata: {
-            action: "comment_posts",
-            usersCount: users.length,
-            messageLength: mensaje.length,
-            postLink: targetLink,
-            campaignId: campaignId
-          }
-        });
-      }
-      
-      updateProgress(40, `Preparando comentarios para ${result.length} publicaciones...`);
-      
-      // Simulación (implementar cuando exista el endpoint real)
-      updateProgress(50, "Enviando comentarios...");
-      await new Promise(resolve => setTimeout(resolve, 2000));
-      updateProgress(70, "Procesando resultados...");
-      
-      if (user) {
-        await logApiRequest({
-          endpoint: "/comment_latest_post",
-          requestData: { 
-            usuarios_count: users.length,
-            filtered_users_count: result.length,
-            message: mensaje,
-            campaign_id: campaignId
-          },
-          userId: user.uid,
-          responseData: { 
-            status: "success",
-            commentedCount: result.length,
-            failedCount: 0,
-            blacklistedCount: users.length - result.length,
-            campaignId: campaignId
-          },
-          status: "success",
-          source: "NuevaCampanaModal",
-          metadata: {
-            action: "comment_posts",
-            usersCount: users.length,
-            filteredUsersCount: result.length,
-            blacklistedCount: users.length - result.length,
-            messageLength: mensaje.length,
-            postLink: targetLink,
-            commentedCount: result.length,
-            failedCount: 0,
-            campaignId: campaignId
-          }
-        });
-      }
-      
-      updateProgress(90, "Finalizando operación...");
-      
-      if (campaignId) {
-        await updateCampaign(user.uid, campaignId, {
-          status: "completed",
-          progress: 100,
-          endedAt: new Date(),
-          successCount: result.length,
-          failedCount: 0
-        });
-      }
-      
-      updateProgress(100, `Comentarios programados para ${result.length} publicaciones`);
-      setError(null);
-      alert(`Se han programado comentarios para ${result.length} publicaciones`);
-      setStep(4);
-      
-    } catch (error) {
-      handleTaskError(error, campaignId, stopMonitoring, "/comment_latest_post", "comment_posts");
-    } finally {
-      setLoading(false);
-    }
-  };
-  
-  const likeLatestPosts = async () => {
-    if (users.length === 0) {
-      setError("No hay usuarios para dar like a sus publicaciones");
-      return;
-    }
-    
-    const result = await checkBlacklistedUsers(users, user, (msg) => setError(msg), "NuevaCampanaModal");
-    updateFilteredUsersState(result);
-  
-    if (result.length === 0) {
-      setError("Todos los usuarios están en listas negras. No se dieron likes.");
-      return;
-    }
-    
-    setLoading(true);
-    setError("");
-    updateProgress(0, "Iniciando proceso de likes...");
-    
-    let campaignId = null;
-    let stopMonitoring = null;
-    
-    try {
-      if (user?.uid) {
-        const campaignOptions = createCampaignOptions({
-          type: "like_posts",
-          users: users,
-          endpoint: "/like_latest_post",
-          postLink: targetLink
-        });
-        
-        campaignId = await createCampaignStore(user.uid, campaignOptions);
-        stopMonitoring = startCampaignMonitoring(user.uid, campaignId, { token: instagramToken });
-      }
-      
-      if (user) {
-        await logApiRequest({
-          endpoint: "/like_latest_post",
-          requestData: { 
-            usuarios_count: users.length,
-            campaign_id: campaignId
-          },
-          userId: user.uid,
-          status: "pending",
-          source: "NuevaCampanaModal",
-          metadata: {
-            action: "like_posts",
-            usersCount: users.length,
-            postLink: targetLink,
-            campaignId: campaignId
-          }
-        });
-      }
-      
-      // Procesar usuarios en secuencia
-      let sucessCount = 0;
-      let failedCount = 0;
-      
-      for (let i = 0; i < result.length; i++) {
-        const username = result[i];
-        
-        try {
-          if (campaignId) {
-            await updateCampaign(user.uid, campaignId, {
-              progress: Math.floor((i / result.length) * 100),
-              currentUser: username,
-              processedUsers: i,
-              totalUsers: result.length
-            });
-          }
-          
-          const likeResult = await instagramApi.likeLatestPost(username);
-          
-          if (likeResult.status === "success") {
-            sucessCount++;
-          } else {
-            failedCount++;
-          }
-          
-          await new Promise(resolve => setTimeout(resolve, 1500));
-          
-        } catch (error) {
-          console.error(`Error al dar like a las publicaciones de ${username}:`, error);
-          failedCount++;
-        }
-      }
-      
-      if (campaignId) {
-        await updateCampaign(user.uid, campaignId, {
-          status: "completed",
-          progress: 100,
-          endedAt: new Date(),
-          successCount: sucessCount,
-          failedCount: failedCount
-        });
-      }
-      
-      if (user) {
-        await logApiRequest({
-          endpoint: "/like_latest_post",
-          requestData: { 
-            usuarios_count: users.length,
-            filtered_users_count: result.length,
-            campaign_id: campaignId
-          },
-          userId: user.uid,
-          responseData: { 
-            status: "success",
-            likedCount: sucessCount,
-            failedCount: failedCount,
-            blacklistedCount: users.length - result.length,
-            campaignId: campaignId
-          },
-          status: "success",
-          source: "NuevaCampanaModal",
-          metadata: {
-            action: "like_posts",
-            usersCount: users.length,
-            filteredUsersCount: result.length,
-            blacklistedCount: users.length - result.length,
-            postLink: targetLink,
-            likedCount: sucessCount,
-            failedCount: failedCount,
-            campaignId: campaignId
-          }
-        });
-      }
-      
-      setError(null);
-      alert(`Se han procesado likes para ${sucessCount} usuarios (fallidos: ${failedCount})`);
-      setStep(4);
-      
-    } catch (error) {
-      handleTaskError(error, campaignId, stopMonitoring, "/like_latest_post", "like_posts");
-    } finally {
-      setLoading(false);
-    }
-  };
-  
-  const handleFileSelect = (event) => {
-    const file = event.target.files[0];
-    if (!file) return;
-    
-    const fileType = file.type;
-    if (fileType.startsWith('image/')) {
-      setMediaType("image");
-    } else if (fileType.startsWith('video/')) {
-      setMediaType("video");
-    } else {
-      setError("Tipo de archivo no soportado. Por favor, selecciona una imagen o video.");
-      return;
-    }
-    
-    setMediaFile(file);
-    
-    const reader = new FileReader();
-    reader.onloadend = () => {
-      setMediaPreview(reader.result);
+    // 3. Preparar Datos Completos
+    const effectiveCampaignName = campaignName || `${taskType} a ${result.length} usuarios - ${new Date().toLocaleDateString()}`;
+    const targetUserCount = result.length;
+    const campaignData = {
+      name: effectiveCampaignName,
+      userId: user.uid,
+      createdAt: new Date(), 
+      status: needsScheduling ? "scheduled" : "processing", // Estado inicial
+      progress: 0,
+      totalProcessed: 0,
+      targetLink,
+      targetType,
+      objective: selectedObjective,
+      originalUserCount: users.length,
+      filteredUsers: targetUserCount, 
+      targetUserList: result, 
+      taskType: taskType, 
+      tasks: tasks, 
+       ...(taskType === 'send_messages' && { message: taskSpecificData.message, templateId: selectedTemplate?.id || null }),
+       ...(taskType === 'comment_posts' && { message: taskSpecificData.message, templateId: selectedTemplate?.id || null }),
+       ...(taskType === 'send_media' && { mediaCaption: taskSpecificData.mediaCaption, mediaType: taskSpecificData.mediaType }),
+      // Ya no se necesita scheduledStartTime
     };
-    reader.readAsDataURL(file);
-    
-    setError(null);
-  };
-  
-  const sendMedia = async () => {
-    if (users.length === 0) {
-      setError("No hay usuarios para enviar medios");
-      return;
-    }
-    
-    if (!mediaFile) {
-      setError("Debes seleccionar un archivo de imagen o video");
-      return;
-    }
-  
-    const result = await checkBlacklistedUsers(users, user, (msg) => setError(msg), "NuevaCampanaModal");
-    updateFilteredUsersState(result);
-  
-    if (result.length === 0) {
-      setError("Todos los usuarios están en listas negras. No se enviaron medios.");
-      return;
-    }
-    
-    setLoading(true);
-    setError("");
-    updateProgress(0, "Iniciando envío de medios...");
-    
+
+    // 4. Guardar en Firestore
     let campaignId = null;
-    let stopMonitoring = null;
-    
     try {
-      updateProgress(10, "Preparando archivo multimedia...");
+      await ensureUserExists(user.uid);
+      const campaignsRef = collection(db, "users", user.uid, "campaigns");
+      const docRef = await addDoc(campaignsRef, campaignData);
+      campaignId = docRef.id;
+      // Guardar la campaña completa con su ID para la activación inmediata
+      const fullCampaignData = { ...campaignData, id: campaignId }; 
       
-      // Validaciones de archivo
-      if (!mediaFile) {
-        throw new Error("No se ha seleccionado ningún archivo multimedia");
-      }
+      console.log(`Campaña ${campaignId} ${needsScheduling ? 'programada (en cola)' : 'creada con estado processing'}.`);
       
-      // Verificación del tipo de archivo
-      const validImageTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
-      const validVideoTypes = ['video/mp4', 'video/quicktime', 'video/webm'];
-      
-      if (mediaType === 'image' && !validImageTypes.includes(mediaFile.type)) {
-        throw new Error(`Tipo de imagen no soportado: ${mediaFile.type}. Use: JPG, PNG, GIF o WebP`);
-      }
-      
-      if (mediaType === 'video' && !validVideoTypes.includes(mediaFile.type)) {
-        throw new Error(`Tipo de video no soportado: ${mediaFile.type}. Use: MP4, MOV o WebM`);
-      }
-      
-      // Verificación de tamaño de archivo (máximo 100MB para simplificar)
-      const MAX_FILE_SIZE = 100 * 1024 * 1024; // 100MB
-      if (mediaFile.size > MAX_FILE_SIZE) {
-        throw new Error(`El archivo es demasiado grande (${(mediaFile.size / (1024 * 1024)).toFixed(2)}MB). Máximo 100MB.`);
-      }
-      
-      console.log("Verificaciones de archivo completadas:", {
-        fileName: mediaFile.name,
-        fileType: mediaFile.type,
-        fileSize: `${(mediaFile.size / 1024).toFixed(2)}KB`,
-        mediaType: mediaType
+      await logApiRequest({
+        endpoint: "internal/create_campaign",
+        requestData: { name: campaignData.name, status: campaignData.status },
+        userId: user.uid,
+        status: "success",
+        source: "NuevaCampanaModal",
+        metadata: { action: needsScheduling ? "schedule_campaign" : "create_campaign_processing", campaignId, campaignName: campaignData.name }
       });
-      
-      if (user?.uid) {
-        const campaignOptions = createCampaignOptions({
-          type: "send_media",
-          users: users,
-          endpoint: "/enviar_media",
-          mediaType: mediaType,
-          fileName: mediaFile?.name || "archivo.media",
-          postLink: targetLink
-        });
-        
-        await ensureUserExists(user.uid);
-        campaignId = await createCampaignStore(user.uid, campaignOptions);
-        
-        if (campaignId) {
-          stopMonitoring = startCampaignMonitoring(user.uid, campaignId, { token: instagramToken });
-          console.log("Campaña creada con ID:", campaignId);
+
+      if (needsScheduling) {
+        setError("");
+        setStep(5); // Ir al paso de mensaje "En cola"
+        return { scheduled: true, started: false, campaignId: campaignId };
+      } else {
+        // Si no se programa, llamar a activateCampaign INMEDIATAMENTE
+        console.log(`Iniciando activación inmediata para campaña ${campaignId}`);
+        const activated = await activateCampaign(user.uid, fullCampaignData, instagramToken);
+        if (activated) {
+          console.log(`Activación inmediata exitosa para ${campaignId}`);
+          return { scheduled: false, started: true, campaignId: campaignId }; // Indicar que se inició
+        } else {
+           console.error(`Error en la activación inmediata de ${campaignId}`);
+           // La campaña se creó como 'processing' pero falló al activar. El estado es inconsistente.
+           // Podríamos intentar marcarla como fallida aquí.
+           setError("Se creó la campaña pero hubo un error al iniciarla.");
+            try {
+              await updateCampaign(user.uid, campaignId, { status: 'failed', error: 'Failed during immediate activation after creation.', endedAt: new Date() });
+            } catch (updateErr) { console.error("Error marcando como fallida tras fallo de activación:", updateErr);}
+           return { scheduled: false, started: false }; // Indicar que no inició
         }
       }
-      
-      updateProgress(20, "Registrando operación...");
-      
-      if (user) {
-        await logApiRequest({
-          endpoint: "/enviar_media",
-          requestData: { 
-            usuarios_count: users.length,
-            media_type: mediaType,
-            campaign_id: campaignId
-          },
-          userId: user.uid,
-          status: "pending",
-          source: "NuevaCampanaModal",
-          metadata: {
-            action: "send_media",
-            usersCount: users.length,
-            mediaType: mediaType,
-            postLink: targetLink || null,
-            campaignId: campaignId
-          }
-        });
-        console.log("Operación registrada en logs");
-      }
-      
-      updateProgress(30, `Enviando ${mediaType} a ${result.length} usuarios...`);
-      
-      console.log("Preparando llamada a instagramApi.sendMedia:", {
-        resultLength: result.length,
-        mediaType,
-        hasMediaCaption: !!mediaCaption,
-        mediaCaptionLength: mediaCaption ? mediaCaption.length : 0,
-        hasInstagramToken: !!instagramToken,
-        tokenPreview: instagramToken ? `${instagramToken.substring(0, 10)}...` : null
-      });
-      
-      // Llamada a la API con el token incluido
-      const data = await instagramApi.sendMedia(result, mediaFile, mediaType, mediaCaption, false, instagramToken);
-      
-      console.log("Respuesta de sendMedia recibida:", data);
-      updateProgress(70, "Procesando resultados...");
-      
-      // Verificar que data tenga la estructura esperada
-      if (!data || typeof data !== 'object') {
-        throw new Error("Respuesta inválida del servidor");
-      }
-      
-      if (data.status !== "success") {
-        throw new Error(`Error del servidor: ${data.message || "Desconocido"}`);
-      }
-      
-      if (campaignId) {
-        await updateCampaign(user.uid, campaignId, {
-          progress: 80,
-          initialResponse: data,
-          filteredUsers: result.length,
-          blacklistedUsers: users.length - result.length
-        });
-        console.log("Campaña actualizada con la respuesta inicial");
-      }
-      
-      updateProgress(90, "Finalizando envío de medios...");
-      
-      if (user) {
-        await logApiRequest({
-          endpoint: "/enviar_media",
-          requestData: { 
-            usuarios_count: users.length,
-            filtered_users_count: result.length,
-            media_type: mediaType,
-            campaign_id: campaignId
-          },
-          userId: user.uid,
-          responseData: { 
-            status: data.status,
-            sentCount: data.sent_count || 0,
-            failedCount: data.failed_count || 0,
-            blacklistedCount: users.length - result.length,
-            campaignId: campaignId
-          },
-          status: data.status === "success" ? "success" : "completed",
-          source: "NuevaCampanaModal",
-          metadata: {
-            action: "send_media",
-            usersCount: users.length,
-            filteredUsersCount: result.length,
-            blacklistedCount: users.length - result.length,
-            mediaType: mediaType,
-            postLink: targetLink,
-            sentCount: data.sent_count || 0,
-            failedCount: data.failed_count || 0,
-            campaignId: campaignId
-          }
-        });
-        console.log("Operación finalizada y registrada en logs");
-      }
-      
-      updateProgress(100, `Medios enviados exitosamente a ${data.sent_count || 0} usuarios`);
-      setError(null);
-      alert(`Medios enviados exitosamente a ${data.sent_count || 0} usuarios`);
-      setStep(4);
-      
-    } catch (error) {
-      console.error("Error detallado en sendMedia:", error);
-      
 
-      
-      // Log detallado del error
-      console.error({
-        errorType: error.name,
-        errorMessage: error.message,
-        errorStack: error.stack,
-        mediaType,
-        fileInfo: mediaFile ? {
-          name: mediaFile.name,
-          type: mediaFile.type,
-          size: mediaFile.size
-        } : 'No file'
-      });
-      
-      handleTaskError(error, campaignId, stopMonitoring, "/enviar_media", "send_media");
-    } finally {
-      setLoading(false);
+    } catch (error) {
+       console.error("Error al guardar la campaña en Firestore:", error);
+       // Si falló al guardar, campaignId será null. Si falló activateCampaign, ya se manejó arriba.
+       setError("Error al guardar la campaña: " + error.message);
+       await logApiRequest({
+         endpoint: "internal/create_campaign",
+         requestData: { name: campaignData.name }, userId: user?.uid, status: "error",
+         source: "NuevaCampanaModal", metadata: { action: "create_campaign_firestore_error", error: error.message }
+       });
+       return { scheduled: false, started: false };
     }
   };
+
+  // --- Modificar Funciones de Acción (simplificado) --- 
+
+  // Todas las funciones de acción ahora solo llaman a prepareAndScheduleCampaign
+  // y manejan la navegación final (ir al paso 4 o 5)
+
+  const handleCampaignAction = async (taskType, taskData) => {
+      setLoading(true);
+      setError("");
+      updateProgress(0, `Preparando campaña ${taskType}...`);
+
+      try {
+         const { scheduled, started, campaignId } = await prepareAndScheduleCampaign(taskType, taskData);
+
+        if (scheduled) {
+            // prepareAndSchedule ya navega al paso 5
+            console.log(`Campaña ${campaignId} programada.`);
+        } else if (started) {
+            // Se inició correctamente
+             updateProgress(100, `${taskType} iniciado.`);
+             setError(null);
+             setStep(4); // Ir a mensaje de éxito/inicio
+             console.log(`Campaña ${campaignId} iniciada inmediatamente.`);
+        } else {
+            // Hubo un error (ya mostrado por prepareAndScheduleCampaign o activateCampaign)
+             console.log("La campaña no pudo ser programada ni iniciada.");
+             // Mantenerse en el paso actual (3) para que el usuario vea el error
+        }
+      } catch (error) {
+         // Errores inesperados en el flujo principal (ya deberían manejarse dentro)
+         console.error("Error inesperado en handleCampaignAction:", error);
+         setError("Ocurrió un error inesperado.");
+      } finally {
+         setLoading(false);
+      }
+  }
+
+  const followAllUsers = () => handleCampaignAction('follow_users', {});
   
+  const sendMessages = () => {
+    if (!mensaje || !mensaje.trim()) {
+      setError("El mensaje no puede estar vacío.");
+      return;
+    }
+    handleCampaignAction('send_messages', { message: mensaje });
+  };
+
+  const commentOnLatestPosts = () => {
+    if (!mensaje.trim()) {
+      setError("Debes escribir un comentario.");
+      return;
+    }
+    handleCampaignAction('comment_posts', { message: mensaje });
+  };
+
+  const likeLatestPosts = () => handleCampaignAction('like_posts', {});
+
+  const sendMedia = () => {
+    if (!mediaFile) {
+      setError("Debes seleccionar un archivo.");
+      return;
+    }
+     // TODO: Añadir lógica de subida a Storage aquí ANTES de llamar a handleCampaignAction
+     // y pasar la URL en taskData. O manejar la subida dentro de activateCampaign.
+     console.warn("Lógica de subida de archivo para sendMedia aún pendiente.");
+    handleCampaignAction('send_media', { mediaCaption: mediaCaption, mediaType: mediaType /*, fileUrl: ... */ });
+  };
+
   // Navegación y manejo de flujo
   const handleNext = async () => {
     setError("");
@@ -1300,98 +727,6 @@ if (users.length === 0) {
 }
   };
   
-  const createCampaign = async () => {
-    try {
-      if (!user?.uid) {
-        setError("Debes iniciar sesión para crear campañas");
-        return;
-      }
-      
-      setLoading(true);
-      
-      const campaignData = {
-        name: campaignName,
-        targetLink,
-        targetType,
-        isProspecting,
-        objective: selectedObjective,
-        filters,
-        tasks,
-        users: users.length,
-        message: mensaje ? true : false,
-        templateId: selectedTemplate?.id || null,
-        createdAt: new Date(),
-        status: "processing",
-        progress: 0,
-        userId: user.uid
-      };
-      
-      const campaignsRef = collection(db, "users", user.uid, "campaigns");
-      const docRef = await addDoc(campaignsRef, campaignData);
-      
-      await logApiRequest({
-        endpoint: "internal/create_campaign",
-        requestData: campaignData,
-        userId: user.uid,
-        status: "success",
-        source: "NuevaCampanaModal",
-        metadata: {
-          action: "create_campaign",
-          campaignId: docRef.id,
-          campaignName
-        }
-      });
-      
-      // Ejecutar las tareas seleccionadas secuencialmente
-      if (tasks.seguir) {
-        await followAllUsers();
-        return;
-      }
-      
-      if (tasks.enviarMensaje) {
-        await sendMessages();
-        return;
-      }
-      
-      if (tasks.enviarMedia && mediaFile) {
-        await sendMedia();
-        return;
-      }
-      
-      if (tasks.darLikes) {
-        await likeLatestPosts();
-        return;
-      }
-      
-      if (tasks.comentar) {
-        await commentOnLatestPosts();
-        return;
-      }
-      
-      // Si no hay tareas que ejecutar inmediatamente
-      setStep(4);
-      setError(null);
-      
-    } catch (error) {
-      console.error("Error al crear la campaña:", error);
-      setError("Error al crear la campaña: " + error.message);
-      
-      await logApiRequest({
-        endpoint: "internal/create_campaign",
-        requestData: { campaignName },
-        userId: user?.uid,
-        status: "error",
-        source: "NuevaCampanaModal",
-        metadata: {
-          action: "create_campaign",
-          error: error.message
-        }
-      });
-    } finally {
-      setLoading(false);
-    }
-  };
-  
   // Render principal
   if (!isOpen) return null;
   
@@ -1401,7 +736,7 @@ if (users.length === 0) {
     {/* Responsive header with adjusted padding */}
     <div className="flex justify-between items-center p-3 sm:p-4 border-b">
       <h2 className="text-lg sm:text-xl font-medium text-black">
-        Nueva Campaña - Paso {step} de 4
+        Nueva Campaña - Paso {step} de {step === 5 ? 5 : 4}
       </h2>
       <button
         onClick={onClose}
@@ -1805,18 +1140,40 @@ if (users.length === 0) {
   </div>
 )}
           
-          {/* Paso 4: Confirmación */}
+          {/* Paso 4: Confirmación de Éxito (si se inició inmediatamente) */}
         {step === 4 && (
-          <div className="text-center py-6 sm:py-10">
+           <div className="text-center py-6 sm:py-10">
             <div className="w-16 h-16 sm:w-20 sm:h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-3 sm:mb-4">
               <svg className="w-8 h-8 sm:w-10 sm:h-10 text-green-600" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
                 <path d="M5 13L9 17L19 7" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
               </svg>
             </div>
-            <h3 className="text-xl sm:text-2xl font-semibold mb-2">¡Campaña creada con éxito!</h3>
+            <h3 className="text-xl sm:text-2xl font-semibold mb-2">¡Campaña Iniciada!</h3>
             <p className="text-gray-600 mb-4 text-sm sm:text-base px-4 sm:px-0">
-              Tu campaña &ldquo;{campaignName}&rdquo; ha sido creada y está en proceso.
+              Tu campaña &ldquo;{campaignName}&rdquo; ha sido iniciada y está en proceso.
               Puedes seguir su progreso en la sección de Campañas.
+            </p>
+            <button 
+              onClick={onClose}
+              className="bg-blue-600 text-white px-4 sm:px-6 py-1.5 sm:py-2 text-sm sm:text-base rounded-lg hover:bg-blue-700"
+            >
+              Entendido
+            </button>
+          </div>
+        )}
+
+        {/* Paso 5: Confirmación de Programación (Actualizado) */} 
+        {step === 5 && (
+          <div className="text-center py-6 sm:py-10">
+            <div className="w-16 h-16 sm:w-20 sm:h-20 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-3 sm:mb-4">
+              <svg className="w-8 h-8 sm:w-10 sm:h-10 text-blue-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+            </div>
+            <h3 className="text-xl sm:text-2xl font-semibold mb-2">¡Campaña en Cola!</h3>
+            <p className="text-gray-600 mb-4 text-sm sm:text-base px-4 sm:px-0">
+              Tu campaña &ldquo;{campaignName}&rdquo; ha sido puesta en cola y 
+              se iniciará automáticamente cuando la campaña activa actual finalice.
             </p>
             <button 
               onClick={onClose}
@@ -1829,7 +1186,7 @@ if (users.length === 0) {
         </div>
         
         {/* Footer con botones de navegación */}
-        {step < 4 && (
+        {step < 4 && ( // Ocultar botones en paso 4 y 5
           <div className="p-3 sm:p-4 border-t flex justify-end space-x-2">
             {step > 1 && (
               <button 
