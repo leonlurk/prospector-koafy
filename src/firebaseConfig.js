@@ -2,19 +2,36 @@ import { initializeApp } from "firebase/app";
 import { getAuth } from "firebase/auth";
 import { getFirestore } from "firebase/firestore";
 
+// Leer la configuración desde las variables de entorno de Vite
 const firebaseConfig = {
-  apiKey: "AIzaSyC72iSuRhZ0pCekj0DN2EOx6DAGxzGFsrE",
-  authDomain: "koafy-5bbb8.firebaseapp.com",
-  projectId: "koafy-5bbb8",
-  storageBucket: "koafy-5bbb8.firebasestorage.app",
-  messagingSenderId: "323380487956",
-  appId: "1:323380487956:web:19644d280a0a1912c10401",
-  measurementId: "G-D90V34D76C"
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
+  appId: import.meta.env.VITE_FIREBASE_APP_ID,
+  // measurementId es opcional, solo incluir si está definida
+  measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID || undefined 
 };
 
+// Validar que las variables esenciales estén presentes
+if (!firebaseConfig.apiKey || !firebaseConfig.projectId) {
+  console.error("Error: Missing Firebase configuration. Check your .env file and ensure VITE_FIREBASE_API_KEY and VITE_FIREBASE_PROJECT_ID are set.");
+  // Podrías lanzar un error o mostrar un mensaje al usuario aquí
+}
+
 // Inicializar Firebase
-const app = initializeApp(firebaseConfig);
-const auth = getAuth(app);
-const db = getFirestore(app); // Inicializar Firestore
+let app;
+let auth;
+let db;
+
+try {
+  app = initializeApp(firebaseConfig);
+  auth = getAuth(app);
+  db = getFirestore(app); // Inicializar Firestore
+} catch (error) {
+  console.error("Firebase initialization failed:", error);
+  // Manejar el error de inicialización (p.ej., mostrar mensaje al usuario)
+}
 
 export { auth, db };

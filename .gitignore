@@ -24,3 +24,11 @@ dist-ssr
 *.sw?
 
 .vercel
+
+# Firebase Admin SDK key (NEVER COMMIT)
+PyGraph/campaign_tracker/koafy-5bbb8-firebase-adminsdk-fbsvc-b7c718e1b8.json
+
+# Environment variables
+.env
+.env.*
+!.env.example
