@@ -1,8 +1,8 @@
 import { useState, useEffect } from "react";
 import { auth } from "./firebaseConfig";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, NavLink } from "react-router-dom";
 import PropTypes from 'prop-types';
-import { FaInstagram, FaTimes, FaBan, FaHome } from "react-icons/fa";
+import { FaInstagram, FaTimes, FaBan, FaHome, FaChartBar } from "react-icons/fa";
 import { doc, getDoc } from "firebase/firestore";
 import { db } from "./firebaseConfig";
 
@@ -12,7 +12,7 @@ const getMenuItems = (isInstagramConnected) => {
     const baseMenuItems = [
         { name: "Home", icon: "/assets/Home.png" },
         { name: "Plantillas", icon: "/assets/device-message.png" },
-        { name: "Estadísticas", icon: "/assets/graph.png" },
+        // { name: "Estadísticas", icon: "/assets/graph.png" }, // Comentado temporalmente
     ];
     
     if (isInstagramConnected) {
@@ -194,6 +194,20 @@ const Sidebar = ({ selectedOption = "", setSelectedOption = () => {}, isInstagra
                         <span>{item.name}</span>
                     </button>
                 ))}
+
+{/*
+                <NavLink 
+                    to="/statistics" 
+                    className={({ isActive }) =>
+                        `flex items-center space-x-3 p-2 md:p-3 transition text-sm md:text-base 
+                            text-white bg-transparent w-full rounded-lg
+                            ${isActive ? 'font-semibold bg-opacity-10 bg-white' : 'hover:bg-white hover:bg-opacity-5'}`
+                    }
+                >
+                    <FaChartBar className="w-5 h-5 md:w-6 md:h-6" />
+                    <span>Estadísticas</span>
+                </NavLink>
+*/}
 
                 {/* Usuario Autenticado */}
                 <div className="border-t border-gray-800 pt-3 md:pt-4 flex items-center mt-3 md:mt-4 gap-3 md:gap-4">

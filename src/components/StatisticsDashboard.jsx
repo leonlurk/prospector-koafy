@@ -247,9 +247,7 @@ const StatisticsDashboard = ({ user }) => {
   };
 
   // Heatmap visualization for Security tab
-// Heatmap visualization
-// Heatmap visualization
-const renderHeatmap = () => {
+  const renderHeatmap = () => {
     return (
       <div className="w-full">
         {/* Leyenda de colores - arriba y a la derecha */}
@@ -315,8 +313,7 @@ const renderHeatmap = () => {
   };
 
   // Render conversion tab content
-  // Función renderConversionTab modificada
-const renderConversionTab = () => {
+  const renderConversionTab = () => {
     return (
       <div className="grid grid-cols-12 gap-4 md:gap-6">
         {/* Gráfico principal de mensajes enviados - 7 columnas */}
@@ -645,9 +642,7 @@ const renderConversionTab = () => {
   };
 
   // Render growth tab content
-  // Render growth tab content
-// Función renderGrowthTab modificada
-const renderGrowthTab = () => {
+  const renderGrowthTab = () => {
     return (
       <div className="grid grid-cols-12 gap-4 md:gap-6">
         {/* New followers chart - 7 columnas */}
@@ -979,8 +974,6 @@ const renderGrowthTab = () => {
   };
 
   // Render security tab content
-  // Actualización del renderSecurityTab para que coincida con la imagen de referencia
-
   const renderSecurityTab = () => {
     return (
       <div className="grid grid-cols-12 gap-4 md:gap-6">
