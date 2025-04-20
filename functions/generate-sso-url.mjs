@@ -6,10 +6,10 @@ const header = {
 };
 //datos usuario
 const payload = {
-  email: "nuevo11.usuario@ejemplo.com",  
-  username: "nuevo11_usuario",           
-  name: "Nuevo11",                       
-  lastname: "Usuario11",                 
+  email: "kevin-cass@ejemplo.com",  
+  username: "cass",           
+  name: "kevin",                       
+  lastname: "cassery",                 
   expiration_date: "2026-06-30T23:59:59Z", 
   sub: "user454",                      
   exp: Math.floor(Date.now() / 1000) + 3600

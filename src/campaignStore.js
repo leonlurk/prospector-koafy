@@ -424,24 +424,24 @@ export const getLastCompletedCampaignTimestamp = async (userId) => {
 
 /**
  * Pausa una campaña activa.
- * Llama a la API del backend con el token de SESIÓN DE INSTAGRAM y luego actualiza Firestore.
+ * Llama a la API del backend con el token de AUTENTICACIÓN JWT y luego actualiza Firestore.
  * @param {string} userId - ID del usuario en Firebase
  * @param {string} campaignId - ID de la campaña a pausar
+ * @param {string} jwtAuthToken - El token de autenticación JWT de la aplicación.
  * @returns {Promise<boolean>} - true si se pausó correctamente
  */
-export const pauseCampaign = async (userId, campaignId) => {
+export const pauseCampaign = async (userId, campaignId, jwtAuthToken) => {
   console.log(`Intentando pausar campaña ${campaignId} para usuario ${userId}`);
   try {
-    // 1. Obtener token de sesión actual de INSTAGRAM
-    const session = await getInstagramSession(userId);
-    const instagramSessionToken = session?.token;
-    console.log(`pauseCampaign: Retrieved Instagram Session Token - Type: ${typeof instagramSessionToken}, Length: ${instagramSessionToken?.length}, StartsWith: ${instagramSessionToken?.substring(0, 10)}`);
-    if (!instagramSessionToken) {
-      throw new Error("No se pudo obtener el token de sesión de Instagram para pausar.");
+    // 1. Verificar token de autenticación JWT
+    // console.log(`pauseCampaign: Received JWT Auth Token - Type: ${typeof jwtAuthToken}, Length: ${jwtAuthToken?.length}`);
+    if (!jwtAuthToken) {
+      console.error("pauseCampaign: Auth token is missing!");
+      throw new Error("Authentication token is required to pause campaign.");
     }
 
-    // 2. Llamar a la API del backend para pausar con el token de sesión IG
-    await instagramApi.manageOperationQueue('pause', campaignId, instagramSessionToken);
+    // 2. Llamar a la API del backend para pausar con el token JWT
+    await instagramApi.manageOperationQueue('pause', campaignId, jwtAuthToken);
     console.log(`API /manage_operation_queue (pause) llamada exitosamente para ${campaignId}.`);
 
     // 3. Si la API no lanzó error, actualizar Firestore
@@ -474,20 +474,20 @@ export const pauseCampaign = async (userId, campaignId) => {
 
 /**
  * Reanuda una campaña pausada.
- * Llama a la API del backend con el token de SESIÓN DE INSTAGRAM y luego actualiza Firestore.
+ * Llama a la API del backend con el token de AUTENTICACIÓN JWT y luego actualiza Firestore.
  * @param {string} userId - ID del usuario en Firebase
  * @param {string} campaignId - ID de la campaña a reanudar
+ * @param {string} jwtAuthToken - El token de autenticación JWT de la aplicación.
  * @returns {Promise<boolean>} - true si se reanudó o encoló correctamente
  */
-export const resumeCampaign = async (userId, campaignId) => {
+export const resumeCampaign = async (userId, campaignId, jwtAuthToken) => {
   console.log(`Intentando reanudar campaña ${campaignId} para usuario ${userId}`);
   try {
-    // 1. Obtener token de sesión actual de INSTAGRAM
-    const session = await getInstagramSession(userId);
-    const instagramSessionToken = session?.token;
-    console.log(`resumeCampaign: Retrieved Instagram Session Token - Type: ${typeof instagramSessionToken}, Length: ${instagramSessionToken?.length}, StartsWith: ${instagramSessionToken?.substring(0, 10)}`);
-    if (!instagramSessionToken) {
-      throw new Error("No se pudo obtener el token de sesión de Instagram para reanudar.");
+    // 1. Verificar token de autenticación JWT
+    // console.log(`resumeCampaign: Received JWT Auth Token - Type: ${typeof jwtAuthToken}, Length: ${jwtAuthToken?.length}`);
+     if (!jwtAuthToken) {
+      console.error("resumeCampaign: Auth token is missing!");
+      throw new Error("Authentication token is required to resume campaign.");
     }
 
     // 2. Verificar si hay otra campaña activa AHORA MISMO (lógica del frontend)
@@ -499,8 +499,8 @@ export const resumeCampaign = async (userId, campaignId) => {
         targetStatus = 'scheduled';
     }
 
-    // 3. Llamar a la API del backend para reanudar con el token de sesión IG
-    await instagramApi.manageOperationQueue('resume', campaignId, instagramSessionToken);
+    // 3. Llamar a la API del backend para reanudar con el token JWT
+    await instagramApi.manageOperationQueue('resume', campaignId, jwtAuthToken);
     console.log(`API /manage_operation_queue (resume) llamada exitosamente para ${campaignId}.`);
 
     // 4. Si la API no lanzó error, actualizar Firestore
@@ -533,24 +533,37 @@ export const resumeCampaign = async (userId, campaignId) => {
 
 /**
  * Cancela una campaña.
- * Llama a la API del backend con el token de SESIÓN DE INSTAGRAM y luego actualiza Firestore.
+ * Llama a la API del backend con el token de AUTENTICACIÓN JWT y luego actualiza Firestore.
  * @param {string} userId - ID del usuario en Firebase
  * @param {string} campaignId - ID de la campaña a cancelar
+ * @param {string} jwtAuthToken - El token de autenticación JWT de la aplicación.
  * @returns {Promise<boolean>} - true si se canceló correctamente
  */
-export const cancelCampaign = async (userId, campaignId) => {
+export const cancelCampaign = async (userId, campaignId, jwtAuthToken) => {
   console.log(`Intentando cancelar campaña ${campaignId} para usuario ${userId}`);
   try {
-    // 1. Obtener token de sesión actual de INSTAGRAM
-    const session = await getInstagramSession(userId);
-    const instagramSessionToken = session?.token;
-    console.log(`cancelCampaign: Retrieved Instagram Session Token - Type: ${typeof instagramSessionToken}, Length: ${instagramSessionToken?.length}, StartsWith: ${instagramSessionToken?.substring(0, 10)}`);
-    if (!instagramSessionToken) {
-      throw new Error("No se pudo obtener el token de sesión de Instagram para cancelar.");
+    // 1. Verificar token de autenticación JWT
+    // console.log(`cancelCampaign: Received JWT Auth Token - Type: ${typeof jwtAuthToken}, Length: ${jwtAuthToken?.length}`);
+    if (!jwtAuthToken) {
+       console.error("cancelCampaign: Auth token is missing!");
+      throw new Error("Authentication token is required to cancel campaign.");
     }
+    
+    // --- Obtener token de sesión de Instagram SOLO si es necesario para activar la siguiente ---
+    let instagramSessionToken = null; 
+    try {
+        const session = await getInstagramSession(userId);
+        instagramSessionToken = session?.token;
+        // console.log(`cancelCampaign: Retrieved Instagram Session Token for potential next activation - Type: ${typeof instagramSessionToken}, Length: ${instagramSessionToken?.length}`);
+    } catch (sessionError) {
+        console.warn(`cancelCampaign: Could not get Instagram session token for next activation, continuing cancellation. Error: ${sessionError.message}`);
+        // No lanzar error aquí, la cancelación debe continuar
+    }
+    // --- Fin obtención token IG ---
 
-    // 2. Llamar a la API del backend para cancelar con el token de sesión IG
-    await instagramApi.manageOperationQueue('cancel', campaignId, instagramSessionToken);
+
+    // 2. Llamar a la API del backend para cancelar con el token JWT
+    await instagramApi.manageOperationQueue('cancel', campaignId, jwtAuthToken);
     console.log(`API /manage_operation_queue (cancel) llamada exitosamente para ${campaignId}.`);
 
     // 3. Si la API no lanzó error, actualizar Firestore
@@ -568,9 +581,13 @@ export const cancelCampaign = async (userId, campaignId) => {
         metadata: { action: "cancel_campaign", campaignId }
       });
 
-    // 4. Intentar activar la siguiente (ya tenemos el token de sesión IG)
-    console.log(`Verificando si hay otra campaña en cola después de cancelar ${campaignId}...`);
-    await checkAndActivateNextScheduled(userId, instagramSessionToken); 
+    // 4. Intentar activar la siguiente (SOLO si obtuvimos el token de sesión IG)
+    if (instagramSessionToken) {
+        console.log(`Verificando si hay otra campaña en cola después de cancelar ${campaignId}...`);
+        await checkAndActivateNextScheduled(userId, instagramSessionToken); 
+    } else {
+        console.log("Skipping next activation check as Instagram session token was not available.");
+    }
        
     return true;
 

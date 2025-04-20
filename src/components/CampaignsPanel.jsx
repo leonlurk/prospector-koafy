@@ -195,23 +195,48 @@ const CampaignsPanel = ({ user, onRefreshStats, onCreateCampaign }) => {
   const handlePauseCampaign = async (campaignId, e) => {
     e.stopPropagation();
     console.log(`Intentando pausar ${campaignId}`);
-    const success = await pauseCampaign(user.uid, campaignId);
-    if (success) {
-      console.log(`Pausa exitosa para ${campaignId}`);
-      setRefreshKey(prev => prev + 1); // Refrescar la lista para ver el cambio de estado
-      // Loggear éxito (opcional pero recomendado)
+    if (!window.confirm('¿Estás seguro de pausar esta campaña?')) return;
+    try {
+      // --- Get JWT Auth Token ---
+      const jwtToken = localStorage.getItem('instagram_bot_token');
+      console.log(`handlePauseCampaign: Retrieved token from localStorage. Type: ${typeof jwtToken}, Length: ${jwtToken?.length}, StartsWith: ${jwtToken?.substring(0, 10)}`); // More detailed log
+      if (!jwtToken) {
+        console.error("Cannot pause campaign: User not authenticated.");
+        showNotification("Error de autenticación. Por favor, inicia sesión de nuevo.", "error");
+        return;
+      }
+      // --- End JWT Auth Token ---
+
+      // Log intent
       await logApiRequest({
         endpoint: "internal/pause_campaign", requestData: { campaignId }, userId: user.uid,
-        status: "success", source: "CampaignsPanel", metadata: { action: "pause_campaign" }
+        status: "pending", source: "CampaignsPanel", metadata: { action: "pause_campaign" }
       });
-    } else {
-      console.error(`Error al pausar ${campaignId}`);
-      // Loggear error (opcional)
-      await logApiRequest({
-        endpoint: "internal/pause_campaign", requestData: { campaignId }, userId: user.uid,
-        status: "error", source: "CampaignsPanel", metadata: { action: "pause_campaign" }
-      });
-      // Mostrar notificación al usuario (opcional)
+      
+      // Call the updated function with the JWT token
+      const success = await pauseCampaign(user.uid, campaignId, jwtToken);
+      
+      if (success) {
+        console.log(`Pausa exitosa para ${campaignId}`);
+        setRefreshKey(prev => prev + 1); // Refrescar la lista para ver el cambio de estado
+        // Loggear éxito (opcional pero recomendado)
+        await logApiRequest({
+          endpoint: "internal/pause_campaign", requestData: { campaignId }, userId: user.uid,
+          status: "success", source: "CampaignsPanel", metadata: { action: "pause_campaign" }
+        });
+        showNotification("Campaña pausada", "success");
+      } else {
+        console.error(`Error al pausar ${campaignId}`);
+        // Loggear error (opcional)
+        await logApiRequest({
+          endpoint: "internal/pause_campaign", requestData: { campaignId }, userId: user.uid,
+          status: "error", source: "CampaignsPanel", metadata: { action: "pause_campaign" }
+        });
+        // Mostrar notificación al usuario (opcional)
+      }
+    } catch (error) {
+      console.error("Error al pausar campaña:", error);
+      showNotification(`Error al pausar campaña: ${error.message}`, "error"); // Show error message
     }
   };
 
@@ -219,22 +244,47 @@ const CampaignsPanel = ({ user, onRefreshStats, onCreateCampaign }) => {
   const handleResumeCampaign = async (campaignId, e) => {
     e.stopPropagation();
     console.log(`Intentando reanudar ${campaignId}`);
-    const success = await resumeCampaign(user.uid, campaignId);
-    if (success) {
-      console.log(`Reanudación/encolado exitoso para ${campaignId}`);
-      setRefreshKey(prev => prev + 1); // Refrescar la lista
-      // Loggear éxito
+    if (!window.confirm('¿Estás seguro de reanudar esta campaña?')) return;
+    try {
+      // --- Get JWT Auth Token ---
+      const jwtToken = localStorage.getItem('instagram_bot_token');
+      console.log(`handleResumeCampaign: Retrieved token from localStorage. Type: ${typeof jwtToken}, Length: ${jwtToken?.length}, StartsWith: ${jwtToken?.substring(0, 10)}`); // More detailed log
+      if (!jwtToken) {
+        console.error("Cannot resume campaign: User not authenticated.");
+        showNotification("Error de autenticación. Por favor, inicia sesión de nuevo.", "error");
+        return;
+      }
+      // --- End JWT Auth Token ---
+
+      // Log intent
       await logApiRequest({
         endpoint: "internal/resume_campaign", requestData: { campaignId }, userId: user.uid,
-        status: "success", source: "CampaignsPanel", metadata: { action: "resume_campaign" }
+        status: "pending", source: "CampaignsPanel", metadata: { action: "resume_campaign" }
       });
-    } else {
-      console.error(`Error al reanudar ${campaignId}`);
-      // Loggear error
-      await logApiRequest({
-        endpoint: "internal/resume_campaign", requestData: { campaignId }, userId: user.uid,
-        status: "error", source: "CampaignsPanel", metadata: { action: "resume_campaign" }
-      });
+
+      // Call the updated function with the JWT token
+      const success = await resumeCampaign(user.uid, campaignId, jwtToken);
+
+      if (success) {
+        console.log(`Reanudación/encolado exitoso para ${campaignId}`);
+        setRefreshKey(prev => prev + 1); // Refrescar la lista
+        // Loggear éxito
+        await logApiRequest({
+          endpoint: "internal/resume_campaign", requestData: { campaignId }, userId: user.uid,
+          status: "success", source: "CampaignsPanel", metadata: { action: "resume_campaign" }
+        });
+        showNotification("Campaña reanudada/encolada", "success");
+      } else {
+        console.error(`Error al reanudar ${campaignId}`);
+        // Loggear error
+        await logApiRequest({
+          endpoint: "internal/resume_campaign", requestData: { campaignId }, userId: user.uid,
+          status: "error", source: "CampaignsPanel", metadata: { action: "resume_campaign" }
+        });
+      }
+    } catch (error) {
+      console.error("Error al reanudar campaña:", error);
+      showNotification(`Error al reanudar campaña: ${error.message}`, "error"); // Show error message
     }
   };
 
@@ -243,6 +293,16 @@ const CampaignsPanel = ({ user, onRefreshStats, onCreateCampaign }) => {
     e.stopPropagation();
     if (!window.confirm('¿Estás seguro de cancelar esta campaña?')) return;
     try {
+      // --- Get JWT Auth Token ---
+      const jwtToken = localStorage.getItem('instagram_bot_token');
+      console.log(`handleCancelCampaign: Retrieved token from localStorage. Type: ${typeof jwtToken}, Length: ${jwtToken?.length}, StartsWith: ${jwtToken?.substring(0, 10)}`); // More detailed log
+      if (!jwtToken) {
+        console.error("Cannot cancel campaign: User not authenticated.");
+        showNotification("Error de autenticación. Por favor, inicia sesión de nuevo.", "error");
+        return;
+      }
+      // --- End JWT Auth Token ---
+
       await logApiRequest({
         endpoint: "internal/cancel_campaign",
         requestData: { campaignId },
@@ -251,7 +311,8 @@ const CampaignsPanel = ({ user, onRefreshStats, onCreateCampaign }) => {
         source: "CampaignsPanel"
       });
       
-      const success = await cancelCampaign(user.uid, campaignId);
+      // Call the updated function with the JWT token
+      const success = await cancelCampaign(user.uid, campaignId, jwtToken);
       
       if (success) {
         setRefreshKey(prev => prev + 1);
@@ -277,6 +338,7 @@ const CampaignsPanel = ({ user, onRefreshStats, onCreateCampaign }) => {
       }
     } catch (error) {
       console.error("Error al cancelar campaña:", error);
+      showNotification(`Error al cancelar campaña: ${error.message}`, "error"); // Show error message
     }
   };
 
