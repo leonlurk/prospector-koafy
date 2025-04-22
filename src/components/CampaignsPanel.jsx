@@ -192,9 +192,18 @@ const CampaignsPanel = ({ user, onRefreshStats, onCreateCampaign }) => {
   }, [campaigns.filter(c => c.status === "processing").length, user?.uid, onRefreshStats, updateActiveCampaignsProgress]);
 
   // Función para pausar una campaña
-  const handlePauseCampaign = async (campaignId, e) => {
+  const handlePauseCampaign = async (campaign, e) => {
     e.stopPropagation();
-    console.log(`Intentando pausar ${campaignId}`);
+    const campaignId = campaign.id;
+    const backendQueueId = campaign.initialResponse?.queue_id;
+    console.log(`Intentando pausar Firestore ID: ${campaignId}, Backend Queue ID: ${backendQueueId}`);
+
+    if (!backendQueueId) {
+      console.error("handlePauseCampaign: Falta backendQueueId para manejar la campaña", campaign);
+      showNotification("Error interno: No se encontró el ID de la cola del backend.", "error");
+      return;
+    }
+
     if (!window.confirm('¿Estás seguro de pausar esta campaña?')) return;
     try {
       // --- Get JWT Auth Token ---
@@ -213,8 +222,8 @@ const CampaignsPanel = ({ user, onRefreshStats, onCreateCampaign }) => {
         status: "pending", source: "CampaignsPanel", metadata: { action: "pause_campaign" }
       });
       
-      // Call the updated function with the JWT token
-      const success = await pauseCampaign(user.uid, campaignId, jwtToken);
+      // Call the updated function with both IDs and the JWT token
+      const success = await pauseCampaign(user.uid, campaignId, backendQueueId, jwtToken);
       
       if (success) {
         console.log(`Pausa exitosa para ${campaignId}`);
@@ -241,9 +250,18 @@ const CampaignsPanel = ({ user, onRefreshStats, onCreateCampaign }) => {
   };
 
   // Función para reanudar una campaña
-  const handleResumeCampaign = async (campaignId, e) => {
+  const handleResumeCampaign = async (campaign, e) => {
     e.stopPropagation();
-    console.log(`Intentando reanudar ${campaignId}`);
+    const campaignId = campaign.id;
+    const backendQueueId = campaign.initialResponse?.queue_id;
+    console.log(`Intentando reanudar Firestore ID: ${campaignId}, Backend Queue ID: ${backendQueueId}`);
+
+    if (!backendQueueId) {
+      console.error("handleResumeCampaign: Falta backendQueueId para manejar la campaña", campaign);
+      showNotification("Error interno: No se encontró el ID de la cola del backend.", "error");
+      return;
+    }
+
     if (!window.confirm('¿Estás seguro de reanudar esta campaña?')) return;
     try {
       // --- Get JWT Auth Token ---
@@ -262,8 +280,8 @@ const CampaignsPanel = ({ user, onRefreshStats, onCreateCampaign }) => {
         status: "pending", source: "CampaignsPanel", metadata: { action: "resume_campaign" }
       });
 
-      // Call the updated function with the JWT token
-      const success = await resumeCampaign(user.uid, campaignId, jwtToken);
+      // Call the updated function with both IDs and the JWT token
+      const success = await resumeCampaign(user.uid, campaignId, backendQueueId, jwtToken);
 
       if (success) {
         console.log(`Reanudación/encolado exitoso para ${campaignId}`);
@@ -289,8 +307,18 @@ const CampaignsPanel = ({ user, onRefreshStats, onCreateCampaign }) => {
   };
 
   // Función para cancelar una campaña
-  const handleCancelCampaign = async (campaignId, e) => {
+  const handleCancelCampaign = async (campaign, e) => {
     e.stopPropagation();
+    const campaignId = campaign.id;
+    const backendQueueId = campaign.initialResponse?.queue_id;
+    console.log(`Intentando cancelar Firestore ID: ${campaignId}, Backend Queue ID: ${backendQueueId}`);
+
+    if (!backendQueueId) {
+      console.error("handleCancelCampaign: Falta backendQueueId para manejar la campaña", campaign);
+      showNotification("Error interno: No se encontró el ID de la cola del backend.", "error");
+      return;
+    }
+
     if (!window.confirm('¿Estás seguro de cancelar esta campaña?')) return;
     try {
       // --- Get JWT Auth Token ---
@@ -311,8 +339,8 @@ const CampaignsPanel = ({ user, onRefreshStats, onCreateCampaign }) => {
         source: "CampaignsPanel"
       });
       
-      // Call the updated function with the JWT token
-      const success = await cancelCampaign(user.uid, campaignId, jwtToken);
+      // Call the updated function with both IDs and the JWT token
+      const success = await cancelCampaign(user.uid, campaignId, backendQueueId, jwtToken);
       
       if (success) {
         setRefreshKey(prev => prev + 1);
@@ -614,7 +642,7 @@ const CampaignsPanel = ({ user, onRefreshStats, onCreateCampaign }) => {
                   <div className="flex items-center ml-2 sm:ml-4">
                     {campaign.status === 'processing' && (
                       <button 
-                        onClick={(e) => handlePauseCampaign(campaign.id, e)}
+                        onClick={(e) => handlePauseCampaign(campaign, e)}
                         className="p-2 text-yellow-600 hover:text-yellow-800 bg-yellow-100 hover:bg-yellow-200 rounded-full mr-2"
                         title="Pausar campaña"
                       >
@@ -624,7 +652,7 @@ const CampaignsPanel = ({ user, onRefreshStats, onCreateCampaign }) => {
 
                     {campaign.status === 'paused' && (
                       <button 
-                        onClick={(e) => handleResumeCampaign(campaign.id, e)}
+                        onClick={(e) => handleResumeCampaign(campaign, e)}
                         className="p-2 text-green-600 hover:text-green-800 bg-green-100 hover:bg-green-200 rounded-full mr-2"
                         title="Reanudar campaña"
                       >
@@ -632,10 +660,10 @@ const CampaignsPanel = ({ user, onRefreshStats, onCreateCampaign }) => {
                       </button>
                     )}
                     
-                    {/* Botón Cancelar (ahora icono) - visible si está processing o paused */}
+                    {/* Botón Cancelar (ahora icono) - visible si está processing, paused or scheduled */}
                     {(campaign.status === 'processing' || campaign.status === 'paused' || campaign.status === 'scheduled') && (
                       <button 
-                        onClick={(e) => handleCancelCampaign(campaign.id, e)}
+                        onClick={(e) => handleCancelCampaign(campaign, e)}
                         className="p-2 text-red-600 hover:text-red-800 bg-red-100 hover:bg-red-200 rounded-full mr-2"
                         title="Cancelar campaña"
                       >

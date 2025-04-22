@@ -427,11 +427,12 @@ export const getLastCompletedCampaignTimestamp = async (userId) => {
  * Llama a la API del backend con el token de AUTENTICACIÓN JWT y luego actualiza Firestore.
  * @param {string} userId - ID del usuario en Firebase
  * @param {string} campaignId - ID de la campaña a pausar
+ * @param {string} backendQueueId - El ID de la cola devuelto por el backend (UUID).
  * @param {string} jwtAuthToken - El token de autenticación JWT de la aplicación.
  * @returns {Promise<boolean>} - true si se pausó correctamente
  */
-export const pauseCampaign = async (userId, campaignId, jwtAuthToken) => {
-  console.log(`Intentando pausar campaña ${campaignId} para usuario ${userId}`);
+export const pauseCampaign = async (userId, campaignId, backendQueueId, jwtAuthToken) => {
+  console.log(`Intentando pausar (Firestore ID: ${campaignId}, Backend Queue ID: ${backendQueueId})`);
   try {
     // 1. Verificar token de autenticación JWT
     // console.log(`pauseCampaign: Received JWT Auth Token - Type: ${typeof jwtAuthToken}, Length: ${jwtAuthToken?.length}`);
@@ -440,11 +441,11 @@ export const pauseCampaign = async (userId, campaignId, jwtAuthToken) => {
       throw new Error("Authentication token is required to pause campaign.");
     }
 
-    // 2. Llamar a la API del backend para pausar con el token JWT
-    await instagramApi.manageOperationQueue('pause', campaignId, jwtAuthToken);
-    console.log(`API /manage_operation_queue (pause) llamada exitosamente para ${campaignId}.`);
+    // 2. Llamar a la API del backend para pausar con el token JWT y el ID de la cola del backend
+    await instagramApi.manageOperationQueue('pause', backendQueueId, jwtAuthToken);
+    console.log(`API /manage_operation_queue (pause) llamada exitosamente para Backend Queue ID: ${backendQueueId}.`);
 
-    // 3. Si la API no lanzó error, actualizar Firestore
+    // 3. Si la API no lanzó error, actualizar Firestore usando el campaignId (Firestore ID)
     await updateCampaign(userId, campaignId, {
       status: "paused",
       error: null 
@@ -453,9 +454,9 @@ export const pauseCampaign = async (userId, campaignId, jwtAuthToken) => {
     
     // Loggear éxito general
     await logApiRequest({
-        endpoint: "/manage_operation_queue", requestData: { action: 'pause', queue_id: campaignId }, 
+        endpoint: "/manage_operation_queue", requestData: { action: 'pause', queue_id: backendQueueId }, 
         userId: userId, status: "success", source: "pauseCampaign", 
-        metadata: { action: "pause_campaign", campaignId }
+        metadata: { action: "pause_campaign", campaignId, backendQueueId }
       });
 
     return true;
@@ -464,9 +465,9 @@ export const pauseCampaign = async (userId, campaignId, jwtAuthToken) => {
     console.error(`Error al pausar campaña ${campaignId}:`, error);
     // Loggear el error
     await logApiRequest({
-        endpoint: "/manage_operation_queue", requestData: { action: 'pause', queue_id: campaignId }, 
+        endpoint: "/manage_operation_queue", requestData: { action: 'pause', queue_id: backendQueueId }, 
         userId: userId, status: "error", source: "pauseCampaign", 
-        metadata: { action: "pause_campaign_error", campaignId, error: error.message }
+        metadata: { action: "pause_campaign_error", campaignId, backendQueueId, error: error.message }
       });
     return false;
   }
@@ -477,11 +478,12 @@ export const pauseCampaign = async (userId, campaignId, jwtAuthToken) => {
  * Llama a la API del backend con el token de AUTENTICACIÓN JWT y luego actualiza Firestore.
  * @param {string} userId - ID del usuario en Firebase
  * @param {string} campaignId - ID de la campaña a reanudar
+ * @param {string} backendQueueId - El ID de la cola devuelto por el backend (UUID).
  * @param {string} jwtAuthToken - El token de autenticación JWT de la aplicación.
  * @returns {Promise<boolean>} - true si se reanudó o encoló correctamente
  */
-export const resumeCampaign = async (userId, campaignId, jwtAuthToken) => {
-  console.log(`Intentando reanudar campaña ${campaignId} para usuario ${userId}`);
+export const resumeCampaign = async (userId, campaignId, backendQueueId, jwtAuthToken) => {
+  console.log(`Intentando reanudar (Firestore ID: ${campaignId}, Backend Queue ID: ${backendQueueId})`);
   try {
     // 1. Verificar token de autenticación JWT
     // console.log(`resumeCampaign: Received JWT Auth Token - Type: ${typeof jwtAuthToken}, Length: ${jwtAuthToken?.length}`);
@@ -499,11 +501,11 @@ export const resumeCampaign = async (userId, campaignId, jwtAuthToken) => {
         targetStatus = 'scheduled';
     }
 
-    // 3. Llamar a la API del backend para reanudar con el token JWT
-    await instagramApi.manageOperationQueue('resume', campaignId, jwtAuthToken);
-    console.log(`API /manage_operation_queue (resume) llamada exitosamente para ${campaignId}.`);
+    // 3. Llamar a la API del backend para reanudar con el token JWT y el ID de la cola del backend
+    await instagramApi.manageOperationQueue('resume', backendQueueId, jwtAuthToken);
+    console.log(`API /manage_operation_queue (resume) llamada exitosamente para Backend Queue ID: ${backendQueueId}.`);
 
-    // 4. Si la API no lanzó error, actualizar Firestore
+    // 4. Si la API no lanzó error, actualizar Firestore usando el campaignId (Firestore ID)
     await updateCampaign(userId, campaignId, {
       status: targetStatus,
       error: null 
@@ -512,9 +514,9 @@ export const resumeCampaign = async (userId, campaignId, jwtAuthToken) => {
 
     // Loggear éxito general
     await logApiRequest({
-        endpoint: "/manage_operation_queue", requestData: { action: 'resume', queue_id: campaignId }, 
+        endpoint: "/manage_operation_queue", requestData: { action: 'resume', queue_id: backendQueueId }, 
         userId: userId, status: "success", source: "resumeCampaign", 
-        metadata: { action: "resume_campaign", campaignId, final_status: targetStatus }
+        metadata: { action: "resume_campaign", campaignId, backendQueueId, final_status: targetStatus }
       });
 
     return true;
@@ -523,9 +525,9 @@ export const resumeCampaign = async (userId, campaignId, jwtAuthToken) => {
     console.error(`Error al reanudar campaña ${campaignId}:`, error);
     // Loggear el error
     await logApiRequest({
-        endpoint: "/manage_operation_queue", requestData: { action: 'resume', queue_id: campaignId }, 
+        endpoint: "/manage_operation_queue", requestData: { action: 'resume', queue_id: backendQueueId }, 
         userId: userId, status: "error", source: "resumeCampaign", 
-        metadata: { action: "resume_campaign_error", campaignId, error: error.message }
+        metadata: { action: "resume_campaign_error", campaignId, backendQueueId, error: error.message }
       });
     return false;
   }
@@ -536,11 +538,12 @@ export const resumeCampaign = async (userId, campaignId, jwtAuthToken) => {
  * Llama a la API del backend con el token de AUTENTICACIÓN JWT y luego actualiza Firestore.
  * @param {string} userId - ID del usuario en Firebase
  * @param {string} campaignId - ID de la campaña a cancelar
+ * @param {string} backendQueueId - El ID de la cola devuelto por el backend (UUID).
  * @param {string} jwtAuthToken - El token de autenticación JWT de la aplicación.
  * @returns {Promise<boolean>} - true si se canceló correctamente
  */
-export const cancelCampaign = async (userId, campaignId, jwtAuthToken) => {
-  console.log(`Intentando cancelar campaña ${campaignId} para usuario ${userId}`);
+export const cancelCampaign = async (userId, campaignId, backendQueueId, jwtAuthToken) => {
+  console.log(`Intentando cancelar (Firestore ID: ${campaignId}, Backend Queue ID: ${backendQueueId})`);
   try {
     // 1. Verificar token de autenticación JWT
     // console.log(`cancelCampaign: Received JWT Auth Token - Type: ${typeof jwtAuthToken}, Length: ${jwtAuthToken?.length}`);
@@ -562,11 +565,11 @@ export const cancelCampaign = async (userId, campaignId, jwtAuthToken) => {
     // --- Fin obtención token IG ---
 
 
-    // 2. Llamar a la API del backend para cancelar con el token JWT
-    await instagramApi.manageOperationQueue('cancel', campaignId, jwtAuthToken);
-    console.log(`API /manage_operation_queue (cancel) llamada exitosamente para ${campaignId}.`);
+    // 2. Llamar a la API del backend para cancelar con el token JWT y el ID de la cola del backend
+    await instagramApi.manageOperationQueue('cancel', backendQueueId, jwtAuthToken);
+    console.log(`API /manage_operation_queue (cancel) llamada exitosamente para Backend Queue ID: ${backendQueueId}.`);
 
-    // 3. Si la API no lanzó error, actualizar Firestore
+    // 3. Si la API no lanzó error, actualizar Firestore usando el campaignId (Firestore ID)
     await updateCampaign(userId, campaignId, {
       status: "cancelled",
       endedAt: new Date(),
@@ -576,9 +579,9 @@ export const cancelCampaign = async (userId, campaignId, jwtAuthToken) => {
     
     // Loggear éxito general
     await logApiRequest({
-        endpoint: "/manage_operation_queue", requestData: { action: 'cancel', queue_id: campaignId }, 
+        endpoint: "/manage_operation_queue", requestData: { action: 'cancel', queue_id: backendQueueId }, 
         userId: userId, status: "success", source: "cancelCampaign", 
-        metadata: { action: "cancel_campaign", campaignId }
+        metadata: { action: "cancel_campaign", campaignId, backendQueueId }
       });
 
     // 4. Intentar activar la siguiente (SOLO si obtuvimos el token de sesión IG)
@@ -595,9 +598,9 @@ export const cancelCampaign = async (userId, campaignId, jwtAuthToken) => {
     console.error(`Error al cancelar campaña ${campaignId}:`, error);
     // Loggear el error
     await logApiRequest({
-        endpoint: "/manage_operation_queue", requestData: { action: 'cancel', queue_id: campaignId }, 
+        endpoint: "/manage_operation_queue", requestData: { action: 'cancel', queue_id: backendQueueId }, 
         userId: userId, status: "error", source: "cancelCampaign", 
-        metadata: { action: "cancel_campaign_error", campaignId, error: error.message }
+        metadata: { action: "cancel_campaign_error", campaignId, backendQueueId, error: error.message }
       });
     return false;
   }

@@ -352,42 +352,73 @@ for (let pair of formData.entries()) {
   /**
    * Gestiona una cola de operación específica (pausar, reanudar, cancelar).
    * @param {string} action - La acción a realizar ('pause', 'resume', 'cancel').
-   * @param {string} campaignId - El ID de la campaña (usado como queue_id).
+   * @param {string} queueIdToManage - El ID de la campaña (usado como queue_id).
    * @param {string} authToken - El token de autenticación JWT.
    * @returns {Promise<object>} - La respuesta de la API.
    */
-  manageOperationQueue: async (action, campaignId, authToken) => {
-    console.log(`manageOperationQueue called (FormData):`, { action, campaignId, hasToken: !!authToken }); // Log FormData attempt
+  manageOperationQueue: async (action, queueIdToManage, authToken) => {
+    // Log inicial
+    console.log(`manageOperationQueue called (FormData):`, { action, queueId: queueIdToManage, hasToken: !!authToken }); // Use new param name in log
 
+    // Verificar que el token JWT se recibió
     if (!authToken) {
       console.error("manageOperationQueue: Auth token is missing!");
-      throw new Error("Authentication token is required."); 
+      throw new Error("Authentication token is required.");
     }
 
-    // Volver a usar FormData
+    // --- Check if Queue ID is provided ---
+    if (!queueIdToManage) {
+      console.error("manageOperationQueue: Queue ID to manage is missing!");
+      throw new Error("Queue ID to manage is required.");
+    }
+    // --- End Check ---
+
+    // --- Paso 1: Preparar el Cuerpo de la Solicitud (Body) ---
     const formData = new FormData();
-    formData.append('action', action);
-    formData.append('queue_id', campaignId);
+    formData.append('action', action);       // Añade el parámetro 'action'
+    formData.append('queue_id', queueIdToManage); // Añade el parámetro 'queue_id' con el valor correcto
+    console.log("Request body (FormData):", { action: formData.get('action'), queue_id: formData.get('queue_id') });
 
     try {
-      const headers = {
-        'Authorization': `Bearer ${authToken}`,
-        // NO establecer Content-Type manualmente para FormData
-      };
+      // Obtener headers comunes
+      const headers = getCommonHeaders();
       
-      console.log("Request headers for manageOperationQueue (FormData):", {
-         Authorization: "Present (Bearer - hidden)"
+      // Importante: asegurar que el token se use correctamente
+      if (authToken) {
+        headers["token"] = authToken;
+      } else if (headers.token) {
+        console.log("Using token from common headers");
+      } else {
+        console.warn("No token available for manageOperationQueue request");
+      }
+      
+      // No incluir Content-Type en el header para permitir que el navegador establezca el boundary correcto
+      delete headers["Content-Type"];
+      
+      console.log("manageOperationQueue request headers:", {
+        ...headers,
+        token: headers.token ? "Present (hidden for security)" : "Not present",
+        cookie: headers.Cookie ? "Present (hidden for security)" : "Not present"
       });
-      console.log("Request body (FormData):", { action: formData.get('action'), queue_id: formData.get('queue_id') });
-
-      const response = await fetch(`${API_BASE_URL}/manage_operation_queue`, { 
-        method: 'POST',
-        headers: headers,
-        body: formData, // Enviar FormData
+      console.log("Headers comparison:", {
+        messageHeaders: { ...headers, token: "hidden" },
+        contentType: headers['Content-Type'],
+        hasAuthToken: !!headers.token
       });
 
-      console.log(`Response status for manageOperationQueue (${action}, ${campaignId}):`, response.status);
-      const result = await response.json();
+      console.log("manageOperationQueue FormData keys:", [...formData.keys()]);
+      
+      // --- Paso 3: Realizar la Petición HTTP (fetch) --- 
+      const response = await fetch(`${API_BASE_URL}/manage_operation_queue`, {
+        method: 'POST',   // Método HTTP
+        headers: headers, // Cabeceras definidas arriba
+        body: formData,   // Cuerpo de la solicitud (FormData)
+      });
+
+      // --- Paso 4: Procesar la Respuesta ---
+      console.log(`Response status for manageOperationQueue (${action}, ${queueIdToManage}):`, response.status); // Log correct queue ID
+      const result = await response.json(); // Intenta parsear la respuesta como JSON
+
       if (!response.ok) {
         const errorMessage = result?.message || `Error HTTP: ${response.status} ${response.statusText}`;
         console.error(`manageOperationQueue error response:`, result);
