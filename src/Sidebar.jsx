@@ -1,67 +1,144 @@
-import { useState, useEffect } from "react";
+import React, { useState, useEffect } from "react";
 import { auth } from "./firebaseConfig";
 import { useNavigate, NavLink } from "react-router-dom";
 import PropTypes from 'prop-types';
-import { FaInstagram, FaTimes, FaBan, FaHome, FaChartBar } from "react-icons/fa";
+import { 
+    FaInstagram, FaTimes, FaBan, FaHome, FaChartBar, FaTools, FaCalendarAlt, FaRobot, 
+    // Add more icons as needed for Setter menu
+    FaTachometerAlt, FaServer, FaShieldAlt, FaExchangeAlt, FaUsersCog, FaCreditCard, FaBell, FaLifeRing, FaCog, FaUserCircle, FaSignOutAlt,
+    FaWhatsapp, FaCommentDots
+} from "react-icons/fa"; 
 import { doc, getDoc } from "firebase/firestore";
 import { db } from "./firebaseConfig";
 
 const logoPath = "/assets/logoBlanco.png";
 
-const getMenuItems = (isInstagramConnected) => {
-    const baseMenuItems = [
-        { name: "Home", icon: "/assets/Home.png" },
-        { name: "Plantillas", icon: "/assets/device-message.png" },
-        // { name: "Estadísticas", icon: "/assets/graph.png" }, // Comentado temporalmente
+// --- Define Setter Menu Items --- (Based on src2/src/layouts/Sidebar.jsx)
+const setterMenuItems = [
+    // Main Nav
+    { name: "SetterDashboard", label: "Dashboard", icon: <FaTachometerAlt className="md:w-5 md:h-6 text-white" />, path: "/dashboard" },
+    { name: "SetterConnections", label: "Conexiones", icon: <FaServer className="md:w-5 md:h-6 text-white" />, path: "/connections" },
+    { name: "SetterBlacklist", label: "Black List", icon: <FaShieldAlt className="md:w-5 md:h-6 text-white" />, path: "/blacklist" },
+    { name: "SetterActionFlow", label: "Action Flow", icon: <FaExchangeAlt className="md:w-5 md:h-6 text-white" />, path: "/action-flow" },
+    { name: "SetterWhatsAppWeb", label: "WhatsApp Web", icon: <FaWhatsapp className="md:w-5 md:h-6 text-white" />, path: "/whatsapp" },
+    { name: "SetterMessages", label: "Mensajes", icon: <FaCommentDots className="md:w-5 md:h-6 text-white" />, path: "/messages" },
+    { name: "SetterAgents", label: "Agente IA", icon: <FaUserCircle className="md:w-5 md:h-6 text-white" />, path: "/agents" }, // Note: Was UserCircleIcon
+    { name: "SetterStatistics", label: "Estadísticas", icon: <FaChartBar className="md:w-5 md:h-6 text-white" />, path: "/statistics" }, // Note: Was ChartBarIcon
+    { name: "SetterBilling", label: "Facturación", icon: <FaCreditCard className="md:w-5 md:h-6 text-white" />, path: "/billing" },
+    { name: "SetterNotifications", label: "Notificación", icon: <FaBell className="md:w-5 md:h-6 text-white" />, path: "/notifications" },
+    // Bottom Section (we can integrate these differently if needed)
+    { name: "SetterSupport", label: "Soporte", icon: <FaLifeRing className="md:w-5 md:h-6 text-white" />, path: "/support", section: "bottom" },
+    { name: "SetterSettings", label: "Ajustes", icon: <FaCog className="md:w-5 md:h-6 text-white" />, path: "/settings", section: "bottom" }, // Note: Was Cog6ToothIcon
+];
+
+// --- Modified getMenuItems --- 
+const getMenuItems = (isInstagramConnected, toolContext) => {
+    
+    // --- IF SETTER CONTEXT IS ACTIVE --- 
+    if (toolContext === 'setter') {
+        // Return ONLY the Setter menu items for now.
+        // We need to decide how to handle the main App items (Ajustes, Light Mode) 
+        // and how to include the 'Herramientas' dropdown to switch back.
+        
+        // Let's return Setter items AND the Herramientas dropdown
+        const combinedSetterMenu = [
+            // Add Herramientas first to allow switching back
+            {
+                name: "Herramientas", // Keep the parent menu name
+                icon: <FaTools className="md:w-5 md:h-6 text-white" />, 
+                subItems: [
+                    { name: "Prospector", label: "Prospector", icon: <FaHome className="md:w-5 md:h-6 text-white" /> }, 
+                    { name: "Setter IA", label: "Setter IA", icon: <FaRobot className="md:w-5 md:h-6 text-white" /> }, 
+                    { name: "Calendar", label: "Calendar", icon: <FaCalendarAlt className="md:w-5 md:h-6 text-white" /> } 
+                ]
+            },
+            // Add Setter-specific items (filtering out bottom ones for main nav)
+            ...setterMenuItems.filter(item => item.section !== 'bottom') 
+        ];
+        return combinedSetterMenu;
+    }
+
+    // --- IF CALENDAR CONTEXT IS ACTIVE --- (Placeholder)
+    if (toolContext === 'calendar') {
+        // Return Calendar specific items + Herramientas dropdown
+        return [
+            {
+                name: "Herramientas", 
+                icon: <FaTools className="md:w-5 md:h-6 text-white" />, 
+                subItems: [ /* ... same as above ... */ ]
+            },
+            // Add Calendar items here...
+            { name: "CalendarView", label: "Vista Calendario", icon: <FaCalendarAlt className="md:w-5 md:h-6 text-white" /> },
+        ];
+    }
+
+    // --- DEFAULT CONTEXT (Prospector/Home) --- 
+    const prospectorMenuItems = [
+        { name: "Home", label: "Home", icon: "/assets/Home.png" },
+        { name: "Plantillas", label: "Plantillas", icon: "/assets/device-message.png" },
+        // Herramientas dropdown definition
+        {
+            name: "Herramientas",
+            icon: <FaTools className="md:w-5 md:h-6 text-white" />, 
+            subItems: [
+                { name: "Prospector", label: "Prospector", icon: <FaHome className="md:w-5 md:h-6 text-white" /> }, 
+                { name: "Setter IA", label: "Setter IA", icon: <FaRobot className="md:w-5 md:h-6 text-white" /> }, 
+                { name: "Calendar", label: "Calendar", icon: <FaCalendarAlt className="md:w-5 md:h-6 text-white" /> } 
+            ]
+        }
     ];
     
     if (isInstagramConnected) {
-        baseMenuItems.push(
-            // Primero Campañas
-            { name: "Campañas", icon: "/assets/calendar.png" },
-            // Luego Listas
+        prospectorMenuItems.push(
+            { name: "Campañas", label: "Campañas", icon: "/assets/calendar.png" },
             { 
                 name: "Listas", 
+                label: "Listas",
                 icon: "/assets/note-2.png",
                 subItems: [
-                    { name: "Whitelist", icon: "/assets/people.png" },
-                    { 
-                        name: "Blacklist", 
-                        icon: <FaBan className="md:w-5 md:h-6 text-white" /> 
-                    }
+                    { name: "Whitelist", label: "Whitelist", icon: "/assets/people.png" },
+                    { name: "Blacklist", label: "Blacklist", icon: <FaBan className="md:w-5 md:h-6 text-white" /> }
                 ]
             },
-            // Y finalmente Nueva Campaña (solo si Instagram está conectado)
-            { name: "Nueva Campaña", icon: "/assets/add-square.png" }
+            { name: "Nueva Campaña", label: "Nueva Campaña", icon: "/assets/add-square.png" }
         );
     } else {
-        // Si no está conectado a Instagram, solo mostrar la opción de conectar
-        baseMenuItems.push(
-            { 
-                name: "Conectar Instagram", 
-                icon: <FaInstagram className="w-5 h-5 md:w-6 md:h-6 text-white" /> 
-            }
+        prospectorMenuItems.push(
+            { name: "Conectar Instagram", label: "Conectar Instagram", icon: <FaInstagram className="w-5 h-5 md:w-6 md:h-6 text-white" /> }
         );
     }
     
-    return baseMenuItems;
+    return prospectorMenuItems;
 };
 
-const bottomItems = [
-    { name: "Herramientas", icon: "/assets/element-plus.png" },
-    { name: "Ajustes", icon: "/assets/setting-2.png" },
-    { name: "Light Mode", icon: "/assets/arrange-circle-2.png" }
+// Define bottom items separately, potentially context-aware?
+const getBottomItems = (toolContext) => {
+    if (toolContext === 'setter') {
+        // Filter setter items marked as 'bottom'
+        return setterMenuItems.filter(item => item.section === 'bottom');
+    }
+    // Default bottom items
+    return [
+        { name: "Ajustes", label: "Ajustes", icon: "/assets/setting-2.png" },
+        { name: "Light Mode", label: "Light Mode", icon: "/assets/arrange-circle-2.png" }
 ];
+};
 
-const Sidebar = ({ selectedOption = "", setSelectedOption = () => {}, isInstagramConnected = false }) => {
+
+const Sidebar = ({ 
+    selectedOption = "", 
+    setSelectedOption = () => {}, 
+    isInstagramConnected = false,
+    toolContext = "prospector" // Default context
+}) => {
     const navigate = useNavigate();
     const [user, setUser] = useState(null);
     const [userData, setUserData] = useState({});
-    // Para controlar el estado de expansión del menú Listas
     const [expandedMenu, setExpandedMenu] = useState("");
     
-    // Get filtered menu items based on Instagram connection status
-    const menuItems = getMenuItems(isInstagramConnected);
+    // Get menu items based on context
+    const menuItems = getMenuItems(isInstagramConnected, toolContext);
+    const bottomItems = getBottomItems(toolContext);
 
     useEffect(() => {
         const unsubscribe = auth.onAuthStateChanged(async (currentUser) => {
@@ -86,14 +163,58 @@ const Sidebar = ({ selectedOption = "", setSelectedOption = () => {}, isInstagra
         }
     };
     
-   {/* const handleLogout = async () => {
-        try {
-            await auth.signOut();
-            navigate("/");
-        } catch (error) {
-            console.error("Logout error:", error);
+    // Function to handle item clicks (main items, not sub-items)
+    const handleItemClick = (item) => {
+         console.log(`[Sidebar Click] Main Item: ${item.name}, Context: ${toolContext}`);
+         if (item.subItems) {
+            // Toggle the submenu
+            setExpandedMenu(prev => prev === item.name ? "" : item.name);
+        } else {
+            // Navigate if it's different
+            if (item.name !== selectedOption) {
+                 console.log(`[Sidebar Click] Calling setSelectedOption(${item.name})`);
+                 setSelectedOption(item.name);
+            }
+            // Close any open menu
+            setExpandedMenu(""); 
         }
-    }; */} 
+    };
+
+    // Function to handle sub-item clicks (for Herramientas, Listas)
+    const handleSubItemClick = (subItem, parentItemName) => {
+        console.log(`[Sidebar Click] SubItem: ${subItem.name}, Parent: ${parentItemName}, Current selectedOption: ${selectedOption}`);
+
+        let targetOption = null;
+
+        // Determine target based on subItem
+        if (parentItemName === "Herramientas") {
+            if (subItem.name === "Setter IA") targetOption = "SetterDashboard"; // Go to Setter's main view
+            else if (subItem.name === "Calendar") targetOption = "CalendarView"; // Go to Calendar's main view
+            // Prospector click should now navigate back to Home
+            else if (subItem.name === "Prospector") {
+                 console.log("[Sidebar Click] Prospector clicked. Setting targetOption to Home.");
+                 targetOption = "Home"; // <--- CHANGE THIS: Set target to Home
+            }
+        } else if (parentItemName === "Listas") {
+             targetOption = subItem.name; // Whitelist or Blacklist
+        }
+        // Add other parent menus if needed
+
+        // Perform navigation if a target was set and it's different
+        if (targetOption && targetOption !== selectedOption) {
+            console.log(`[Sidebar Click] Calling setSelectedOption(${targetOption})`);
+            setSelectedOption(targetOption);
+        }
+
+        // Always close the dropdown menu
+        if (expandedMenu !== "") { 
+            console.log(`[Sidebar Click] Menu '${expandedMenu}' is open. Calling setExpandedMenu('').`); 
+            setExpandedMenu(""); 
+        } else {
+            console.log(`[Sidebar Click] No menu currently expanded. Skipping setExpandedMenu('').`);
+        }
+    };
+
 
     return (
         <div className="h-screen w-[85vw] md:w-[280px] lg:w-[300px] bg-[#0d0420] shadow-lg rounded-tr-3xl flex flex-col justify-between p-4 md:p-6 overflow-y-auto font-['Poppins']">
@@ -101,7 +222,7 @@ const Sidebar = ({ selectedOption = "", setSelectedOption = () => {}, isInstagra
             <div className="md:hidden flex justify-end mb-2">
                 <button 
                     className="p-1 rounded-full bg-gray-800 text-white"
-                    onClick={() => setSelectedOption(selectedOption)}
+                    onClick={() => setSelectedOption(selectedOption)} // Might need adjustment if setter context has different close behavior
                     aria-label="Cerrar menú"
                 >
                     <FaTimes size={18} />
@@ -121,55 +242,49 @@ const Sidebar = ({ selectedOption = "", setSelectedOption = () => {}, isInstagra
                 />
             </div>
 
-            {/* Menú principal con imágenes */}
+            {/* Menú principal - Render based on menuItems */}
             <nav className="flex flex-col space-y-2 md:space-y-4 overflow-y-auto w-full">
             {menuItems.map((item) => (
                 <div key={item.name} className="relative w-full">
                     <button
-                        onClick={() => {
-                            if (item.name === "Listas" && item.subItems) {
-                                // Solo toggle el estado de expansión del menú sin cambiar la pestaña actual
-                                setExpandedMenu(prev => prev === "Listas" ? "" : "Listas");
-                            } else {
-                                console.log("Cambiando vista a:", item.name);
-                                setSelectedOption(item.name);
-                            }
-                        }}
+                        onClick={() => handleItemClick(item)} // Use dedicated handler
                         className={`flex items-center space-x-3 p-2 md:p-3 transition text-base md:text-lg text-white bg-transparent w-full rounded-lg
-                            ${selectedOption === item.name 
+                            ${selectedOption === item.name && !item.subItems 
                                 ? "font-semibold bg-opacity-10 bg-white" 
                                 : "hover:bg-white hover:bg-opacity-5"}`}
                     >
+                        {/* Icon Rendering - Handles string path or React component */}
                         {typeof item.icon === "string" ? (
-                            <img src={item.icon} alt={item.name} className="w-5 h-5 md:w-6 md:h-6 brightness-0 invert" />
-                        ) : (
-                            <span className="w-5 h-5 md:w-6 md:h-6 text-white">{item.icon}</span>
-                        )}
-                        <span>{item.name}</span>
+                            <img src={item.icon} alt={item.label || item.name} className="w-5 h-5 md:w-6 md:h-6 brightness-0 invert" />
+                        ) : React.isValidElement(item.icon) ? (
+                             React.cloneElement(item.icon, { className: "w-5 h-5 md:w-6 md:h-6 flex items-center justify-center text-white shrink-0" })
+                        ) : null}
+                        <span className="truncate">{item.label || item.name}</span>
                     </button>
                     
-                    {/* Subitems con transición suave - Ahora controlado por expandedMenu */}
+                    {/* Subitems (for Herramientas, Listas) */}
                     {item.subItems && (
                         <div 
                             className={`pl-8 space-y-2 overflow-hidden transition-all duration-300 ease-in-out w-full
-                                ${expandedMenu === item.name ? 'max-h-40 opacity-100' : 'max-h-0 opacity-0'}`}
+                                ${expandedMenu === item.name ? 'max-h-60 opacity-100' : 'max-h-0 opacity-0'}`}
                         >
                             {item.subItems.map((subItem) => (
                                 <button
                                     key={subItem.name}
-                                    onClick={() => setSelectedOption(subItem.name)}
+                                    onClick={() => handleSubItemClick(subItem, item.name)} // Use dedicated handler
                                     className={`flex items-center space-x-3 p-2 md:p-3 transition text-sm text-gray-300 hover:text-white 
                                         bg-transparent w-full rounded-lg
-                                        ${selectedOption === subItem.name 
+                                        ${selectedOption === subItem.name // Highlight based on sub-item name (might need adjustment if targetOption differs)
                                             ? "font-semibold bg-opacity-10 bg-white" 
                                             : "hover:bg-white hover:bg-opacity-5"}`}
                                 >
+                                    {/* Icon Rendering */} 
                                     {typeof subItem.icon === "string" ? (
-                                        <img src={subItem.icon} alt={subItem.name} className="w-4 h-4 md:w-5 md:h-5 brightness-0 invert" />
-                                    ) : (
-                                        <span className="w-4 h-4 md:w-5 md:h-5 text-white">{subItem.icon}</span>
-                                    )}
-                                    <span>{subItem.name}</span>
+                                        <img src={subItem.icon} alt={subItem.label || subItem.name} className="w-4 h-4 md:w-5 md:h-5 brightness-0 invert" />
+                                    ) : React.isValidElement(subItem.icon) ? (
+                                        React.cloneElement(subItem.icon, { className: "w-4 h-4 md:w-5 md:h-5 flex items-center justify-center text-white shrink-0" })
+                                    ) : null}
+                                    <span className="truncate">{subItem.label || subItem.name}</span>
                                 </button>
                             ))}
                         </div>
@@ -178,41 +293,32 @@ const Sidebar = ({ selectedOption = "", setSelectedOption = () => {}, isInstagra
             ))}
             </nav>
 
-            {/* Sección inferior con imágenes */}
+            {/* Sección inferior - Render based on bottomItems */}
             <div className="flex flex-col space-y-2 md:space-y-4 mt-4 md:mt-6 w-full">
                 {bottomItems.map((item) => (
                     <button
                         key={item.name}
-                        onClick={() => setSelectedOption(item.name)}
+                        onClick={() => handleItemClick(item)} // Can reuse handleItemClick
                         className={`flex items-center space-x-3 p-2 md:p-3 transition text-sm md:text-base 
                             text-white bg-transparent w-full rounded-lg
                             ${selectedOption === item.name 
                                 ? "font-semibold bg-opacity-10 bg-white" 
                                 : "hover:bg-white hover:bg-opacity-5"}`}
                     >
-                        <img src={item.icon} alt={item.name} className="w-5 h-5 md:w-6 md:h-6 brightness-0 invert" />
-                        <span>{item.name}</span>
+                        {/* Icon Rendering */} 
+                         {typeof item.icon === "string" ? (
+                            <img src={item.icon} alt={item.label || item.name} className="w-5 h-5 md:w-6 md:h-6 brightness-0 invert" />
+                        ) : React.isValidElement(item.icon) ? (
+                             React.cloneElement(item.icon, { className: "w-5 h-5 md:w-6 md:h-6 flex items-center justify-center text-white shrink-0" })
+                        ) : null}
+                        <span className="truncate">{item.label || item.name}</span>
                     </button>
                 ))}
 
-{/*
-                <NavLink 
-                    to="/statistics" 
-                    className={({ isActive }) =>
-                        `flex items-center space-x-3 p-2 md:p-3 transition text-sm md:text-base 
-                            text-white bg-transparent w-full rounded-lg
-                            ${isActive ? 'font-semibold bg-opacity-10 bg-white' : 'hover:bg-white hover:bg-opacity-5'}`
-                    }
-                >
-                    <FaChartBar className="w-5 h-5 md:w-6 md:h-6" />
-                    <span>Estadísticas</span>
-                </NavLink>
-*/}
-
-                {/* Usuario Autenticado */}
+                {/* ... (User Profile Section remains the same, ensure userData is available) ... */}
                 <div className="border-t border-gray-800 pt-3 md:pt-4 flex items-center mt-3 md:mt-4 gap-3 md:gap-4">
                     <img 
-                        src="/assets/user.png" 
+                         src="/assets/user.png" // Consider making this dynamic based on userData
                         alt="User Icon"
                         className="w-8 h-8 md:w-10 md:h-10 rounded-full"
                         onError={(e) => {
@@ -224,29 +330,24 @@ const Sidebar = ({ selectedOption = "", setSelectedOption = () => {}, isInstagra
                         <span className="text-xs text-gray-400 truncate">{user?.email || "Sin correo"}</span>
                     </div>
                 </div>
-                
-                {/* Botón de Cerrar Sesión */}
-            {/*    <button
-                    onClick={handleLogout}
-                    className="mt-2 md:mt-4 flex items-center justify-center space-x-3 p-2 md:p-3 rounded-lg bg-gray-200 text-black hover:bg-gray-300 transition w-full text-sm md:text-base"
-                >
-                    <span>Cerrar Sesión</span>
-                </button> */}
             </div>
         </div>
     );
 };
 
+// Update PropTypes
 Sidebar.propTypes = {
     selectedOption: PropTypes.string,
     setSelectedOption: PropTypes.func,
-    isInstagramConnected: PropTypes.bool
+    isInstagramConnected: PropTypes.bool,
+    toolContext: PropTypes.oneOf(['prospector', 'setter', 'calendar']) // Add toolContext prop type
 };
 
 Sidebar.defaultProps = {
     selectedOption: "",
     setSelectedOption: () => {},
-    isInstagramConnected: false
+    isInstagramConnected: false,
+    toolContext: "prospector" // Add default value
 };
 
 export default Sidebar;

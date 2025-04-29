@@ -32,3 +32,6 @@ PyGraph/campaign_tracker/koafy-5bbb8-firebase-adminsdk-fbsvc-b7c718e1b8.json
 .env
 .env.*
 !.env.example
+
+# Ignorar copia o versión antigua del código fuente
+/src2/
