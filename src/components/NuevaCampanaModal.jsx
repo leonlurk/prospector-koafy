@@ -36,7 +36,7 @@ const formatDateTime = (date) => {
   });
 };
 
-const NuevaCampanaModal = ({ isOpen, onClose, user, instagramToken }) => {
+const NuevaCampanaModal = ({ isOpen, onClose, user, instagramToken, onCampaignCreated }) => {
   // Estados principales
   const [step, setStep] = useState(1);
   const [campaignName, setCampaignName] = useState("");
@@ -417,112 +417,113 @@ const NuevaCampanaModal = ({ isOpen, onClose, user, instagramToken }) => {
   
   // --- Función Auxiliar para Preparar y Programar/Iniciar Campaña (Lógica de Cola Estricta) ---
   const prepareAndScheduleCampaign = async (taskType, taskSpecificData) => {
-    if (!user?.uid || !instagramToken) { // Necesitamos token para activar inmediatamente
-      setError("Debes iniciar sesión y tener una sesión de Instagram activa.");
-      return { scheduled: false, started: false };
+    if (!user?.uid) {
+      setError("Error: Usuario no autenticado.");
+      return null;
     }
 
-    // 1. Validación y filtro blacklist (sin cambios)
-    const result = await checkBlacklistedUsers(users, user, (msg) => setError(msg), "NuevaCampanaModal");
-    updateFilteredUsersState(result);
-    if (result.length === 0) {
-      setError("Todos los usuarios aplicables están en listas negras.");
-      return { scheduled: false, started: false };
-    }
+    setLoading(true);
+    setError("");
+    updateProgress(5, "Creando registro de campaña...");
 
-    // 2. Verificar si hay una campaña activa
-    let needsScheduling = false;
     try {
-      const latestProcessing = await getLatestProcessingCampaign(user.uid);
-      if (latestProcessing) {
-        console.log(`Campaña activa (${latestProcessing.id}) encontrada. La nueva campaña será programada.`);
-        needsScheduling = true;
-      } else {
-        console.log("No hay campañas activas. Iniciando inmediatamente.");
-      }
-    } catch (err) {
-      console.error("Error al verificar campaña activa, procediendo a iniciar inmediatamente por seguridad:", err);
-      needsScheduling = false; // Fallback: intentar iniciar
-    }
-    
-    // 3. Preparar Datos Completos
-    const effectiveCampaignName = campaignName || `${taskType} a ${result.length} usuarios - ${new Date().toLocaleDateString()}`;
-    const targetUserCount = result.length;
-    const campaignData = {
-      name: effectiveCampaignName,
-      userId: user.uid,
-      createdAt: new Date(), 
-      status: needsScheduling ? "scheduled" : "processing", // Estado inicial
-      progress: 0,
-      totalProcessed: 0,
-      targetLink,
-      targetType,
-      objective: selectedObjective,
-      originalUserCount: users.length,
-      filteredUsers: targetUserCount, 
-      targetUserList: result, 
+      await ensureUserExists(user.uid); // Make sure user doc exists
+
+      // 1. Check for existing active campaign
+      const activeCampaign = await getLatestProcessingCampaign(user.uid);
+      const shouldSchedule = !!activeCampaign;
+
+      // 2. Create campaign options payload
+      const campaignOptions = createCampaignOptions(user.uid, {
+        name: campaignName || `Campaña ${formatDateTime(new Date())}`,
+        targetLink: targetLink,
+        targetType: targetType,
+        objective: selectedObjective || taskType,
       taskType: taskType, 
+        users: users, // Full list before blacklist filtering
+        messageTemplate: mensaje,
+        mediaFile: mediaFile?.name, // Pass filename or identifier
+        mediaCaption: mediaCaption,
+        taskSpecificData: taskSpecificData,
+        filters: filters,
       tasks: tasks, 
-       ...(taskType === 'send_messages' && { message: taskSpecificData.message, templateId: selectedTemplate?.id || null }),
-       ...(taskType === 'comment_posts' && { message: taskSpecificData.message, templateId: selectedTemplate?.id || null }),
-       ...(taskType === 'send_media' && { mediaCaption: taskSpecificData.mediaCaption, mediaType: taskSpecificData.mediaType }),
-      // Ya no se necesita scheduledStartTime
-    };
-
-    // 4. Guardar en Firestore
-    let campaignId = null;
-    try {
-      await ensureUserExists(user.uid);
-      const campaignsRef = collection(db, "users", user.uid, "campaigns");
-      const docRef = await addDoc(campaignsRef, campaignData);
-      campaignId = docRef.id;
-      // Guardar la campaña completa con su ID para la activación inmediata
-      const fullCampaignData = { ...campaignData, id: campaignId }; 
-      
-      console.log(`Campaña ${campaignId} ${needsScheduling ? 'programada (en cola)' : 'creada con estado processing'}.`);
-      
-      await logApiRequest({
-        endpoint: "internal/create_campaign",
-        requestData: { name: campaignData.name, status: campaignData.status },
-        userId: user.uid,
-        status: "success",
-        source: "NuevaCampanaModal",
-        metadata: { action: needsScheduling ? "schedule_campaign" : "create_campaign_processing", campaignId, campaignName: campaignData.name }
+        // Schedule status based on whether another campaign is active
+        status: shouldSchedule ? 'scheduled' : 'pending', 
+        scheduledAt: shouldSchedule ? new Date() : null, 
+        progress: 0,
+        createdAt: new Date()
       });
-
-      if (needsScheduling) {
-        setError("");
-        setStep(5); // Ir al paso de mensaje "En cola"
-        return { scheduled: true, started: false, campaignId: campaignId };
-      } else {
-        // Si no se programa, llamar a activateCampaign INMEDIATAMENTE
-        console.log(`Iniciando activación inmediata para campaña ${campaignId}`);
-        const activated = await activateCampaign(user.uid, fullCampaignData, instagramToken);
-        if (activated) {
-          console.log(`Activación inmediata exitosa para ${campaignId}`);
-          return { scheduled: false, started: true, campaignId: campaignId }; // Indicar que se inició
-        } else {
-           console.error(`Error en la activación inmediata de ${campaignId}`);
-           // La campaña se creó como 'processing' pero falló al activar. El estado es inconsistente.
-           // Podríamos intentar marcarla como fallida aquí.
-           setError("Se creó la campaña pero hubo un error al iniciarla.");
-            try {
-              await updateCampaign(user.uid, campaignId, { status: 'failed', error: 'Failed during immediate activation after creation.', endedAt: new Date() });
-            } catch (updateErr) { console.error("Error marcando como fallida tras fallo de activación:", updateErr);}
-           return { scheduled: false, started: false }; // Indicar que no inició
+      
+      updateProgress(15, "Guardando campaña en la base de datos...");
+      // 3. Create campaign document in Firestore
+      const campaignRef = await createCampaignStore(user.uid, campaignOptions);
+      const campaignId = campaignRef.id;
+      console.log(`Campaign document created with ID: ${campaignId}, Status: ${campaignOptions.status}`);
+      
+      updateProgress(25, "Campaña registrada. Verificando estado...");
+      
+      // 4. If scheduled, we are done for now. Close modal and notify.
+      if (shouldSchedule) {
+        console.log(`Campaign ${campaignId} scheduled because another campaign is active.`);
+        setLoading(false);
+        updateProgress(100, "Campaña programada en cola.");
+        if (typeof onCampaignCreated === 'function') { // <-- Call the callback
+          onCampaignCreated();
         }
+        onClose(); // Close the modal
+        // showNotification("Campaña programada en cola.", "info"); // Notify user (handled by Dashboard maybe?)
+        return campaignId; // Return ID even if scheduled
+      }
+
+      // 5. If NOT scheduled, attempt to activate it immediately.
+      updateProgress(30, "Activando campaña...");
+      const activated = await activateCampaign(user.uid, { id: campaignId, ...campaignOptions }, instagramToken);
+
+      if (activated) {
+        console.log(`Campaign ${campaignId} activated successfully.`);
+        updateProgress(40, "Campaña activada. Iniciando monitoreo...");
+        // Start monitoring *after* activation is confirmed
+        const { stopMonitoring } = startCampaignMonitoring(user.uid, campaignId, (update) => {
+          // Handle real-time updates from monitoring
+          updateProgress(update.progress, update.message);
+          if (update.status === 'completed' || update.status === 'failed') {
+            if (typeof onCampaignCreated === 'function') { // <-- Call the callback on completion/failure too
+              onCampaignCreated();
+            }
+            // Optionally close modal automatically on completion/failure
+            // setLoading(false);
+            // onClose(); 
+          }
+        });
+        // Store stopMonitoring function if needed elsewhere, maybe tied to modal close?
+        
+        // Since activation succeeded and monitoring started, trigger refresh and close.
+        if (typeof onCampaignCreated === 'function') { // <-- Call the callback after activation
+          onCampaignCreated();
+        }
+        // setLoading(false); // Keep loading indicator while monitoring runs?
+        // onClose(); // Or keep modal open to show progress?
+        
+        return campaignId; // Return the ID of the activated campaign
+      } else {
+        // Activation failed (logged within activateCampaign)
+        console.error(`Failed to activate campaign ${campaignId}. It remains in 'pending' state.`);
+        setError("No se pudo activar la campaña. Revise la conexión de Instagram.");
+        updateProgress(100, "Error al activar la campaña.");
+        // Even if activation failed, the record exists, so trigger refresh?
+        if (typeof onCampaignCreated === 'function') { 
+          onCampaignCreated();
+        }
+        setLoading(false);
+        return campaignId; // Return ID even if activation failed
       }
 
     } catch (error) {
-       console.error("Error al guardar la campaña en Firestore:", error);
-       // Si falló al guardar, campaignId será null. Si falló activateCampaign, ya se manejó arriba.
-       setError("Error al guardar la campaña: " + error.message);
-       await logApiRequest({
-         endpoint: "internal/create_campaign",
-         requestData: { name: campaignData.name }, userId: user?.uid, status: "error",
-         source: "NuevaCampanaModal", metadata: { action: "create_campaign_firestore_error", error: error.message }
-       });
-       return { scheduled: false, started: false };
+      console.error("Error preparing/scheduling campaign:", error);
+      setError(`Error al preparar la campaña: ${error.message}`);
+      updateProgress(100, `Error: ${error.message}`);
+      setLoading(false);
+      return null;
     }
   };
 
@@ -804,7 +805,7 @@ if (users.length === 0) {
                     name="objective"
                     className="w-4 h-4 sm:w-5 sm:h-5"
                   />
-                  <span>Comentarios de la publicación</span>
+                  <span>Comentarios de la publicación (próximamente)</span>
                 </label>
                 
                 <label className="flex items-center space-x-2 text-black text-sm sm:text-base">
@@ -826,7 +827,7 @@ if (users.length === 0) {
                     name="objective"
                     className="w-4 h-4 sm:w-5 sm:h-5"
                   />
-                  <span>Seguidores del perfil</span>
+                  <span>Seguidores del perfil (próximamente)</span>
                 </label>
               </div>
             </div>
@@ -856,7 +857,7 @@ if (users.length === 0) {
                         name="task"
                         className="w-5 h-5"
                       />
-                      <span>Seguir instagrammers</span>
+                      <span>Seguir instagrammers (próximamente</span>
                     </label>
                     
                     <label className="flex items-center space-x-2">
@@ -890,7 +891,7 @@ if (users.length === 0) {
                         name="task"
                         className="w-5 h-5"
                       />
-                      <span>Dar likes a las publicaciones</span>
+                      <span>Dar likes a las publicaciones (próximamente)</span>
                     </label>
                     
                     <label className="flex items-center space-x-2">
@@ -907,7 +908,7 @@ if (users.length === 0) {
                         name="task"
                         className="w-5 h-5"
                       />
-                      <span>Comentar en sus publicaciones (soon)</span>
+                      <span>Comentar en sus publicaciones (próximamente)</span>
                     </label>
                   </div>
                 </div>
@@ -1274,7 +1275,7 @@ NuevaCampanaModal.propTypes = {
   onClose: PropTypes.func.isRequired,
   user: PropTypes.object,
   instagramToken: PropTypes.string,
-  initialTab: PropTypes.string
+  onCampaignCreated: PropTypes.func
 };
 
 export default NuevaCampanaModal;

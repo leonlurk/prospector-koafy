@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useWhatsApp } from '../context/WhatsAppContext';
 import { getAgents, createAgent, setActiveAgent, getActiveAgent } from '../services/api';
 import OptionCard from '../components/OptionCard';
+import agentImageUrl from '../assets/agent.png';
 
 // --- Placeholder Icons --- 
 const SearchIcon = (props) => (
@@ -361,9 +362,9 @@ Error agentes: ${agentsResponse.data?.message || agentsResponse.message}` : `Err
                   >
                     <div className="relative shrink-0">
                       <img 
-                        src={agent.avatar || '/logoBlanco.png'}
+                        src={agentImageUrl}
                         alt={agent.persona?.name || 'Agente'}
-                        className="w-12 h-12 rounded-full object-cover border border-gray-200 group-hover:opacity-90 transition-opacity"
+                        className="w-10 h-10 rounded-full object-cover border border-gray-200 group-hover:opacity-90 transition-opacity"
                         onError={(e) => { e.target.onerror = null; e.target.src='/logoBlanco.png'; }}
                       />
                       {isActive && (

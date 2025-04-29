@@ -5,9 +5,9 @@ import { AreaChart, Area, XAxis, /* LineChart, Line, */ ResponsiveContainer, Too
 import { getActiveCampaigns } from '../campaignStore';
 import { getCampaignTypeName } from '../campaignIntegration';
 import { generateChartData, calculateCampaignProgress } from '../campaignSimulator';
-import { FaPlus } from 'react-icons/fa';
+import { FaPlus, FaArrowRight } from 'react-icons/fa';
 
-const HomeDashboard = ({ user, onCreateCampaign }) => {
+const HomeDashboard = ({ user, onCreateCampaign, navigateToCampaigns, isInstagramConnected, showNotification }) => {
   const [activeCampaign, setActiveCampaign] = useState(null);
   const [loading, setLoading] = useState(false);
   const [chartData, setChartData] = useState(null);
@@ -79,6 +79,14 @@ const HomeDashboard = ({ user, onCreateCampaign }) => {
       if (intervalId) clearInterval(intervalId);
     };
   }, [user]);
+
+  const handleVerTodoClick = () => {
+    if (isInstagramConnected) {
+      navigateToCampaigns();
+    } else {
+      showNotification("Debes conectar tu cuenta de Instagram primero para ver las campañas.", "error");
+    }
+  };
 
   const renderLineChart = () => {
     if (chartLoading) {
@@ -180,14 +188,17 @@ const HomeDashboard = ({ user, onCreateCampaign }) => {
   return (
     <div className="p-4 md:p-6 bg-[#F3F2FC] min-h-screen font-['Poppins']">
       <div className="mb-6">
-        <h2 className="text-lg text-gray-600 font-normal">Hola {user?.displayName || user?.email || "Usuario"},</h2>
+        <h2 className="text-lg text-gray-600 font-normal">Hola, {user?.displayName || user?.email || "Usuario"},</h2>
         <h1 className="text-2xl font-medium text-black">Bienvenido a Tribe IA</h1>
       </div>
 
       <div className="bg-white p-4 rounded-xl shadow-sm mb-6">
         <div className="flex justify-between items-center">
           <h2 className="text-xl font-medium text-black">Campañas activas</h2>
-          <button className="bg-white text-gray-500 px-3 py-1 rounded-lg border border-gray-200 text-sm">
+          <button 
+            onClick={handleVerTodoClick}
+            className="bg-white text-gray-500 px-3 py-1 rounded-lg border border-gray-200 text-sm hover:bg-gray-50"
+          >
             Ver todo
           </button>
         </div>
@@ -236,7 +247,13 @@ const HomeDashboard = ({ user, onCreateCampaign }) => {
             <p className="text-gray-500 mb-4">No hay campañas activas en este momento.</p>
             <button 
               className="mt-3 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 inline-flex items-center justify-center"
-              onClick={onCreateCampaign}
+              onClick={() => {
+                if (isInstagramConnected) {
+                  onCreateCampaign();
+                } else {
+                  showNotification("Debes conectar tu cuenta de Instagram para crear una campaña.", "error");
+                }
+              }}
             >
               <FaPlus className="mr-2" />
               Crear Campaña
@@ -250,7 +267,10 @@ const HomeDashboard = ({ user, onCreateCampaign }) => {
 
 HomeDashboard.propTypes = {
   user: PropTypes.object,
-  onCreateCampaign: PropTypes.func.isRequired
+  onCreateCampaign: PropTypes.func.isRequired,
+  navigateToCampaigns: PropTypes.func,
+  isInstagramConnected: PropTypes.bool,
+  showNotification: PropTypes.func
 };
 
 export default HomeDashboard;

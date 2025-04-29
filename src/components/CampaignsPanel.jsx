@@ -6,7 +6,7 @@ import CampaignDetailsModal from "./CampaignDetailsModal";
 import { calculateCampaignProgress } from "../campaignSimulator";
 import { FaPause, FaPlay, FaTrash } from 'react-icons/fa';
 
-const CampaignsPanel = ({ user, onRefreshStats, onCreateCampaign }) => {
+const CampaignsPanel = ({ user, onRefreshStats, onCreateCampaign, refreshTrigger }) => {
   const [campaigns, setCampaigns] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshKey, setRefreshKey] = useState(0);
@@ -164,14 +164,14 @@ const CampaignsPanel = ({ user, onRefreshStats, onCreateCampaign }) => {
     } finally {
       setLoading(false);
     }
-  }, [user]);
+  }, [user, refreshTrigger]);
 
-  // Cargar campañas al montar el componente y cuando cambie el refreshKey
+  // Cargar campañas al montar el componente y cuando cambie el refreshKey o refreshTrigger
   useEffect(() => {
     if (user?.uid) {
       fetchCampaigns();
     }
-  }, [fetchCampaigns, refreshKey, user]);
+  }, [fetchCampaigns, refreshKey, user, refreshTrigger]);
 
   // Programar actualizaciones periódicas si hay campañas activas
   useEffect(() => {
@@ -708,7 +708,8 @@ const CampaignsPanel = ({ user, onRefreshStats, onCreateCampaign }) => {
 CampaignsPanel.propTypes = {
   user: PropTypes.object.isRequired,
   onRefreshStats: PropTypes.func,
-  onCreateCampaign: PropTypes.func
+  onCreateCampaign: PropTypes.func,
+  refreshTrigger: PropTypes.number
 };
 
 export default CampaignsPanel;

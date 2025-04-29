@@ -6,9 +6,9 @@ const header = {
 };
 //datos usuario
 const payload = {
-  email: "kevin-cass@ejemplo.com",  
-  username: "cass",           
-  name: "kevin",                       
+  email: "rrr-cass@ejemplo.com",  
+  username: "rcass",           
+  name: "rkevin",                       
   lastname: "cassery",                 
   expiration_date: "2026-06-30T23:59:59Z", 
   sub: "user454",                      

@@ -115,16 +115,22 @@ const Dashboard = () => {
   const [showCampaignsPanel, setShowCampaignsPanel] = useState(false);
   const [isNewCampaignModalOpen, setIsNewCampaignModalOpen] = useState(false);
   const [processingScheduled, setProcessingScheduled] = useState(false);
+  const [campaignListVersion, setCampaignListVersion] = useState(0);
 
   // Determine the current tool context
   const currentToolContext = getToolContext(selectedOption);
 
   // Notificación simple
-  const showNotification = (message, type = "info") => {
+  const showNotificationFunc = (message, type = "info") => {
     setNotification({ show: true, message, type });
     setTimeout(() => {
       setNotification({ show: false, message: "", type: "" });
     }, 3000);
+  };
+
+  // Function to trigger campaign list refresh
+  const triggerCampaignsRefresh = () => {
+    setCampaignListVersion(prevVersion => prevVersion + 1);
   };
 
   const handleSidebarOptionChange = (option) => {
@@ -134,7 +140,7 @@ const Dashboard = () => {
         setShowSidebar(false); // Cerrar el sidebar en móviles si está abierto
       } else {
         // Mostrar una notificación o redireccionar a conectar Instagram
-        showNotification("Debes conectar tu cuenta de Instagram primero", "warning");
+        showNotificationFunc("Debes conectar tu cuenta de Instagram primero", "warning");
         setSelectedOption("Conectar Instagram");
         setShowSidebar(false);
       }
@@ -142,6 +148,11 @@ const Dashboard = () => {
       setSelectedOption(option);
       setShowSidebar(false);
     }
+  };
+
+  // Function to navigate specifically to the Campaigns tab
+  const navigateToCampaigns = () => {
+    handleSidebarOptionChange('Campañas');
   };
 
   const types = ["Plantillas de mensajes", "Plantillas de comentarios"];
@@ -182,7 +193,7 @@ const Dashboard = () => {
       setIsTemplatesLoading(false);
     } catch (error) {
       console.error("Error al cargar plantillas:", error);
-      showNotification("Error al cargar las plantillas", "error");
+      showNotificationFunc("Error al cargar las plantillas", "error");
       setIsTemplatesLoading(false);
     }
   }, []);
@@ -245,7 +256,7 @@ const Dashboard = () => {
         return data.status === "success" && data.authenticated;
       } catch (error) {
         console.error("Error al verificar sesión de Instagram:", error);
-        showNotification("No se pudo verificar la sesión de Instagram", "error");
+        showNotificationFunc("No se pudo verificar la sesión de Instagram", "error");
         return false;
       } finally {
         setIsLoading(false);
@@ -379,16 +390,17 @@ const Dashboard = () => {
 
             if (!currentInstagramToken) {
               console.error("Polling Fallback: No se pudo obtener token para activar campaña.");
-              showNotification("Error: No se pudo obtener token para activar campaña en cola.", "error");
+              showNotificationFunc("Error: No se pudo obtener token para activar campaña en cola.", "error");
             } else {
                // Llamar a activateCampaign (que maneja errores internos y logs)
                const activated = await activateCampaign(user.uid, nextCampaign, currentInstagramToken);
                if (activated) {
-                   showNotification(`Campaña en cola '${nextCampaign.name}' iniciada.`, "success");
+                   showNotificationFunc(`Campaña en cola '${nextCampaign.name}' iniciada.`, "success");
+                   triggerCampaignsRefresh();
                    // Podríamos querer refrescar la lista de campañas aquí
                } else {
                     // activateCampaign ya maneja el log y el cambio a status: failed
-                    showNotification(`Error al iniciar campaña en cola '${nextCampaign.name}'.`, "error");
+                    showNotificationFunc(`Error al iniciar campaña en cola '${nextCampaign.name}'.`, "error");
                }
             }
           } else {
@@ -415,15 +427,15 @@ const Dashboard = () => {
   // Guarda plantilla
   const saveTemplate = async () => {
     if (!user) {
-      showNotification("Error: No hay un usuario autenticado.", "error");
+      showNotificationFunc("Error: No hay un usuario autenticado.", "error");
       return;
     }
     if (!newTemplate?.trim()) {
-      showNotification("El nombre de la plantilla es obligatorio.", "error");
+      showNotificationFunc("El nombre de la plantilla es obligatorio.", "error");
       return;
     }
     if (!newTemplateBody?.trim()) {
-      showNotification("El cuerpo del mensaje es obligatorio.", "error");
+      showNotificationFunc("El cuerpo del mensaje es obligatorio.", "error");
       return;
     }
 
@@ -437,7 +449,7 @@ const Dashboard = () => {
         createdAt: new Date(),
         type: selectedType !== "Tipo" ? selectedType : "Plantillas de mensajes",
     });
-      showNotification("Plantilla guardada con éxito", "success");
+      showNotificationFunc("Plantilla guardada con éxito", "success");
       setNewTemplate("");
       setSelectedPlatform("Plataformas");
       setNewTemplateBody("");
@@ -445,7 +457,7 @@ const Dashboard = () => {
       fetchTemplates(user.uid);
     } catch (error) {
       console.error("Error al guardar la plantilla:", error);
-      showNotification("Error al guardar la plantilla", "error");
+      showNotificationFunc("Error al guardar la plantilla", "error");
     } finally {
       setIsLoading(false);
     }
@@ -454,7 +466,7 @@ const Dashboard = () => {
   // Maneja opciones de plantilla
   const handleTemplateOptions = (template) => {
     if (!template.id) {
-      showNotification("Error: La plantilla seleccionada no tiene un ID.", "error");
+      showNotificationFunc("Error: La plantilla seleccionada no tiene un ID.", "error");
       return;
     }
     setSelectedTemplate({
@@ -509,9 +521,20 @@ const Dashboard = () => {
     // o tener un mapeo claro.
     switch (selectedOption) {
         case 'Home':
-            return <HomeDashboard user={user} onCreateCampaign={() => setIsNewCampaignModalOpen(true)} />;
+            return <HomeDashboard 
+                     user={user} 
+                     onCreateCampaign={() => setIsNewCampaignModalOpen(true)} 
+                     navigateToCampaigns={navigateToCampaigns} 
+                     isInstagramConnected={isInstagramConnected}
+                     showNotification={showNotificationFunc}
+                   />;
         case 'Campañas':
-            return <CampaignsPanel user={user} onRefreshStats={() => {}} onCreateCampaign={() => setIsNewCampaignModalOpen(true)} />;
+            return <CampaignsPanel 
+                     user={user} 
+                     onRefreshStats={() => {}} // Consider if stats need refresh too 
+                     onCreateCampaign={() => setIsNewCampaignModalOpen(true)} 
+                     refreshTrigger={campaignListVersion} // <-- Pass the trigger prop
+                   />;
         case 'Blacklist': // Manejado abajo por optionType? Revisar si hay duplicado
             return <SetterBlackListPage />;
         case 'Whitelist':
@@ -787,6 +810,7 @@ const Dashboard = () => {
         onClose={() => setIsNewCampaignModalOpen(false)}
         user={user}
         instagramToken={instagramToken}
+        onCampaignCreated={triggerCampaignsRefresh}
       />
     </div>
   );

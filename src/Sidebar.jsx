@@ -16,16 +16,16 @@ const logoPath = "/assets/logoBlanco.png";
 // --- Define Setter Menu Items --- (Based on src2/src/layouts/Sidebar.jsx)
 const setterMenuItems = [
     // Main Nav
-    { name: "SetterDashboard", label: "Dashboard", icon: <FaTachometerAlt className="md:w-5 md:h-6 text-white" />, path: "/dashboard" },
+    // { name: "SetterDashboard", label: "Dashboard", icon: <FaTachometerAlt className="md:w-5 md:h-6 text-white" />, path: "/dashboard" }, // <-- Commented out
     { name: "SetterConnections", label: "Conexiones", icon: <FaServer className="md:w-5 md:h-6 text-white" />, path: "/connections" },
-    { name: "SetterBlacklist", label: "Black List", icon: <FaShieldAlt className="md:w-5 md:h-6 text-white" />, path: "/blacklist" },
-    { name: "SetterActionFlow", label: "Action Flow", icon: <FaExchangeAlt className="md:w-5 md:h-6 text-white" />, path: "/action-flow" },
-    { name: "SetterWhatsAppWeb", label: "WhatsApp Web", icon: <FaWhatsapp className="md:w-5 md:h-6 text-white" />, path: "/whatsapp" },
-    { name: "SetterMessages", label: "Mensajes", icon: <FaCommentDots className="md:w-5 md:h-6 text-white" />, path: "/messages" },
+    // { name: "SetterBlacklist", label: "Black List", icon: <FaShieldAlt className="md:w-5 md:h-6 text-white" />, path: "/blacklist" }, // <-- Commented out
+    // { name: "SetterActionFlow", label: "Action Flow", icon: <FaExchangeAlt className="md:w-5 md:h-6 text-white" />, path: "/action-flow" }, // <-- Commented out
+    // { name: "SetterWhatsAppWeb", label: "WhatsApp Web", icon: <FaWhatsapp className="md:w-5 md:h-6 text-white" />, path: "/whatsapp" }, // <-- Commented out
+    // { name: "SetterMessages", label: "Mensajes", icon: <FaCommentDots className="md:w-5 md:h-6 text-white" />, path: "/messages" }, // <-- Commented out
     { name: "SetterAgents", label: "Agente IA", icon: <FaUserCircle className="md:w-5 md:h-6 text-white" />, path: "/agents" }, // Note: Was UserCircleIcon
-    { name: "SetterStatistics", label: "Estadísticas", icon: <FaChartBar className="md:w-5 md:h-6 text-white" />, path: "/statistics" }, // Note: Was ChartBarIcon
-    { name: "SetterBilling", label: "Facturación", icon: <FaCreditCard className="md:w-5 md:h-6 text-white" />, path: "/billing" },
-    { name: "SetterNotifications", label: "Notificación", icon: <FaBell className="md:w-5 md:h-6 text-white" />, path: "/notifications" },
+    // { name: "SetterStatistics", label: "Estadísticas", icon: <FaChartBar className="md:w-5 md:h-6 text-white" />, path: "/statistics" }, // <-- Commented out (Note: Was ChartBarIcon)
+    // { name: "SetterBilling", label: "Facturación", icon: <FaCreditCard className="md:w-5 md:h-6 text-white" />, path: "/billing" }, // <-- Commented out
+    // { name: "SetterNotifications", label: "Notificación", icon: <FaBell className="md:w-5 md:h-6 text-white" />, path: "/notifications" }, // <-- Commented out
     // Bottom Section (we can integrate these differently if needed)
     { name: "SetterSupport", label: "Soporte", icon: <FaLifeRing className="md:w-5 md:h-6 text-white" />, path: "/support", section: "bottom" },
     { name: "SetterSettings", label: "Ajustes", icon: <FaCog className="md:w-5 md:h-6 text-white" />, path: "/settings", section: "bottom" }, // Note: Was Cog6ToothIcon
@@ -36,25 +36,40 @@ const getMenuItems = (isInstagramConnected, toolContext) => {
     
     // --- IF SETTER CONTEXT IS ACTIVE --- 
     if (toolContext === 'setter') {
-        // Return ONLY the Setter menu items for now.
-        // We need to decide how to handle the main App items (Ajustes, Light Mode) 
-        // and how to include the 'Herramientas' dropdown to switch back.
-        
-        // Let's return Setter items AND the Herramientas dropdown
-        const combinedSetterMenu = [
-            // Add Herramientas first to allow switching back
-            {
-                name: "Herramientas", // Keep the parent menu name
-                icon: <FaTools className="md:w-5 md:h-6 text-white" />, 
-                subItems: [
-                    { name: "Prospector", label: "Prospector", icon: <FaHome className="md:w-5 md:h-6 text-white" /> }, 
-                    { name: "Setter IA", label: "Setter IA", icon: <FaRobot className="md:w-5 md:h-6 text-white" /> }, 
-                    { name: "Calendar", label: "Calendar", icon: <FaCalendarAlt className="md:w-5 md:h-6 text-white" /> } 
-                ]
-            },
-            // Add Setter-specific items (filtering out bottom ones for main nav)
-            ...setterMenuItems.filter(item => item.section !== 'bottom') 
-        ];
+        // Define the Herramientas dropdown separately
+        const herramientasDropdown = {
+            name: "Herramientas", // Keep the parent menu name
+            icon: <FaTools className="md:w-5 md:h-6 text-white" />, 
+            subItems: [
+                { name: "Prospector", label: "Prospector", icon: <FaHome className="md:w-5 md:h-6 text-white" /> }, 
+                { name: "Setter IA", label: "Setter IA", icon: <FaRobot className="md:w-5 md:h-6 text-white" /> }, 
+                { name: "Calendar", label: "Calendar", icon: <FaCalendarAlt className="md:w-5 md:h-6 text-white" /> } 
+            ]
+        };
+
+        // Get the main Setter items (filter out bottom and commented items)
+        const mainSetterItems = setterMenuItems.filter(item => 
+            !item.section && // Exclude bottom items
+            // Check if the item is NOT commented out (by checking its presence in the original array by name)
+            ["SetterConnections", "SetterAgents"].includes(item.name) // List only the *visible* main items here
+        );
+
+        // Manually construct the desired order
+        const combinedSetterMenu = [];
+        const connectionsItem = mainSetterItems.find(item => item.name === "SetterConnections");
+        const agentsItem = mainSetterItems.find(item => item.name === "SetterAgents");
+
+        if (connectionsItem) combinedSetterMenu.push(connectionsItem);
+        if (agentsItem) combinedSetterMenu.push(agentsItem);
+        combinedSetterMenu.push(herramientasDropdown); // Add Herramientas as the third item
+
+        // Add any remaining mainSetterItems (if any were added back later)
+        mainSetterItems.forEach(item => {
+            if (!["SetterConnections", "SetterAgents"].includes(item.name)) {
+                combinedSetterMenu.push(item);
+            }
+        });
+
         return combinedSetterMenu;
     }
 
@@ -117,10 +132,10 @@ const getBottomItems = (toolContext) => {
         // Filter setter items marked as 'bottom'
         return setterMenuItems.filter(item => item.section === 'bottom');
     }
-    // Default bottom items
+    // Default bottom items (Prospector/Calendar)
     return [
-        { name: "Ajustes", label: "Ajustes", icon: "/assets/setting-2.png" },
-        { name: "Light Mode", label: "Light Mode", icon: "/assets/arrange-circle-2.png" }
+        // { name: "Ajustes", label: "Ajustes", icon: "/assets/setting-2.png" }, // <-- Commented out
+        // { name: "Light Mode", label: "Light Mode", icon: "/assets/arrange-circle-2.png" } // <-- Commented out
 ];
 };
 
@@ -188,7 +203,7 @@ const Sidebar = ({
 
         // Determine target based on subItem
         if (parentItemName === "Herramientas") {
-            if (subItem.name === "Setter IA") targetOption = "SetterDashboard"; // Go to Setter's main view
+            if (subItem.name === "Setter IA") targetOption = "SetterConnections"; // <-- CHANGE THIS: Go to Connections instead of Dashboard
             else if (subItem.name === "Calendar") targetOption = "CalendarView"; // Go to Calendar's main view
             // Prospector click should now navigate back to Home
             else if (subItem.name === "Prospector") {
