@@ -531,10 +531,94 @@ const Dashboard = () => {
              // Reintegrar la lógica de renderizado de plantillas que estaba antes
       return (
         <div className="p-4 md:p-6 bg-[#F3F2FC] min-h-screen">
-                   {/* ... (JSX de búsqueda y botón Crear Plantilla) ... */}
-                   {/* ... (JSX de lista/loading de plantillas) ... */}
-                   {/* Ejemplo simplificado: */}
-                   <p>Vista de Plantillas (Reintegrar JSX)</p> 
+          <div className="flex flex-row justify-between items-center mb-4 md:mb-6 gap-2">
+  <div className="relative flex-grow">
+    <FaSearch className="absolute left-4 top-1/2 transform -translate-y-1/2 text-gray-500" />
+    <input
+      type="text"
+      placeholder="Buscar Plantilla"
+      value={searchQuery}
+      onChange={(e) => searchTemplates(e.target.value)}
+      style={{ paddingLeft: '40px' }}
+      className="p-3 md:p-4 border border-[#ffffff] rounded-full w-full bg-white shadow-sm text-[#393346] focus:outline-none focus:ring-1 focus:ring-black"
+    />
+  </div>
+  <button
+  className="px-4 md:px-6 py-3 md:py-4 bg-white text-black rounded-full shadow-sm flex items-center gap-2 hover:bg-[#acacac] transition text-sm md:text-base whitespace-nowrap h-[46px] md:h-[54px]"
+  onClick={openCreateTemplateModal}
+>
+  <FaPlus /> Crear Plantilla
+</button>
+</div>
+
+          {isTemplatesLoading ? (
+            <div className="flex justify-center items-center py-8">
+              <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-blue-500"></div>
+              <span className="ml-2">Cargando plantillas...</span>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {filteredTemplates.length > 0 ? (
+                filteredTemplates.map((template, index) => (
+                  <div
+                    key={template.id}
+                    className="p-4 bg-white rounded-2xl flex justify-between items-center shadow-sm hover:shadow-md transition"
+                  >
+                    <div className="flex items-center gap-4">
+                      <div
+                        className="w-12 h-12 md:w-12 md:h-12 flex items-center justify-center"
+                        style={{
+                          backgroundImage: "url(/assets/rectangleDark.png)",
+                          backgroundSize: "cover",
+                          width: "58px", // Fuerza el ancho con estilo en línea
+                          height: "58px"
+                        }}
+                      >
+                        <img
+                          src={index % 2 === 0 ? "/assets/message.png" : "/assets/messages-2.png"}
+                          alt="Message Icon"
+                          className="w-10 h-10 md:w-8 md:h-8 object-contain"
+                        />
+                      </div>
+                      <div className="overflow-hidden">
+                        <p className="font-semibold text-black truncate text-sm md:text-base">
+                          {template.name}
+                        </p>
+                        <p className="text-xs md:text-sm text-gray-500 truncate">
+                          {template.platform || "Sin plataforma"}
+                        </p>
+                      </div>
+                    </div>
+                    <button
+                      className="cursor-pointer flex items-center justify-center ml-2"
+                      style={{
+                        backgroundColor: "transparent",
+                        border: "none",
+                        padding: 0,
+                        margin: 0,
+                        lineHeight: 1,
+                      }}
+                      onClick={() => handleTemplateOptions(template)}
+                    >
+                      <img
+                        src="/assets/setting-5.png"
+                        alt="Opciones"
+                        className="w-9 h-9 md:w-11 md:h-11"
+                      />
+                    </button>
+                  </div>
+                ))
+              ) : (
+                <div className="p-4 md:p-8 bg-white rounded-2xl text-center">
+                  <p className="text-gray-500">
+                    {searchQuery
+                      ? "No se encontraron plantillas con esos criterios de búsqueda."
+                      : "No hay plantillas disponibles. Crea una nueva plantilla para comenzar."}
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       );
         case 'Estadísticas': // Manejado abajo por optionType? Revisar
