@@ -18,7 +18,7 @@ export const calculateCampaignProgress = (campaign) => {
   }
 
   // Obtener el recuento real de usuarios
-  let totalUsers = campaign.filteredUsers || 0;
+  let totalUsers = campaign.targetCount || 0;
 
   // Si no hay usuarios, la campaña no puede progresar
   if (totalUsers <= 0) {
@@ -102,7 +102,7 @@ export const generateChartData = (campaign) => {
   }
   
 // Obtener el recuento real de usuarios - usar la misma lógica que en calculateCampaignProgress
-let totalUsers = campaign.filteredUsers || 0;
+let totalUsers = campaign.targetCount || 0;
 
 // Si no hay usuarios, no hay datos para el gráfico o dura 0 horas
 if (totalUsers <= 0) {

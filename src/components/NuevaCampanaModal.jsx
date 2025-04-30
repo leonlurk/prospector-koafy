@@ -51,7 +51,6 @@ const NuevaCampanaModal = ({ isOpen, onClose, user, instagramToken, onCampaignCr
   const [templates, setTemplates] = useState([]);
   const [showWhitelistModal, setShowWhitelistModal] = useState(false);
   const [lastWhitelistOperation, setLastWhitelistOperation] = useState(null);
-  // Crear un nombre de campaña significativo si no se proporciona
   
   // Estados para multimedia
   const [mediaFile, setMediaFile] = useState(null);
@@ -79,6 +78,40 @@ const NuevaCampanaModal = ({ isOpen, onClose, user, instagramToken, onCampaignCr
     comentar: false,
     enviarMedia: false
   });
+
+  // --- Add reset function --- 
+  const resetModalState = () => {
+    setStep(1);
+    setCampaignName("");
+    setTargetLink("");
+    setTargetType("");
+    setIsProspecting(false);
+    setUsers([]);
+    setMensaje("");
+    setSelectedTemplate(null);
+    setLoading(false);
+    setError("");
+    // Don't reset templates (fetched once)
+    setShowWhitelistModal(false);
+    setLastWhitelistOperation(null);
+    setMediaFile(null);
+    setMediaPreview(null);
+    setMediaType("image");
+    setMediaCaption("");
+    setShowBlacklist(false);
+    setFilteredUsers(null);
+    setProgress(0);
+    setProgressMessage("");
+    setSelectedObjective("");
+    setFilters({ genero: false });
+    setTasks({
+      seguir: false,
+      enviarMensaje: false,
+      darLikes: false,
+      comentar: false,
+      enviarMedia: false
+    });
+  };
   
   const fetchTemplates = useCallback(async () => {
     if (!user?.uid) return;
@@ -173,12 +206,14 @@ const NuevaCampanaModal = ({ isOpen, onClose, user, instagramToken, onCampaignCr
   };
   
   // Reset del estado cuando se abre/cierra el modal
-
   useEffect(() => {
     if (isOpen && user?.uid) {
       fetchTemplates();
+    } else if (!isOpen) {
+       // Reset state when modal is explicitly closed (or isOpen becomes false)
+       resetModalState(); 
     }
-  }, [isOpen, user, fetchTemplates]);
+  }, [isOpen, user, fetchTemplates]); // Removed resetModalState from dependencies to avoid potential loops if it causes re-renders
   
   // Manejadores para obtener usuarios
   const getLikesFromPost = async () => {
@@ -433,31 +468,29 @@ const NuevaCampanaModal = ({ isOpen, onClose, user, instagramToken, onCampaignCr
       const activeCampaign = await getLatestProcessingCampaign(user.uid);
       const shouldSchedule = !!activeCampaign;
 
-      // 2. Create campaign options payload
-      const campaignOptions = createCampaignOptions(user.uid, {
-        name: campaignName || `Campaña ${formatDateTime(new Date())}`,
+      // 2. Prepare campaign data object
+      const campaignOptions = createCampaignOptions({
+        type: taskType,
+        userId: user.uid, 
+        name: campaignName,
         targetLink: targetLink,
         targetType: targetType,
-        objective: selectedObjective || taskType,
-      taskType: taskType, 
-        users: users, // Full list before blacklist filtering
+        users: users, 
         messageTemplate: mensaje,
-        mediaFile: mediaFile?.name, // Pass filename or identifier
+        mediaFile: mediaFile?.name,
         mediaCaption: mediaCaption,
         taskSpecificData: taskSpecificData,
-        filters: filters,
-      tasks: tasks, 
-        // Schedule status based on whether another campaign is active
-        status: shouldSchedule ? 'scheduled' : 'pending', 
-        scheduledAt: shouldSchedule ? new Date() : null, 
-        progress: 0,
-        createdAt: new Date()
       });
       
       updateProgress(15, "Guardando campaña en la base de datos...");
-      // 3. Create campaign document in Firestore
-      const campaignRef = await createCampaignStore(user.uid, campaignOptions);
-      const campaignId = campaignRef.id;
+      // 3. Create campaign document in Firestore - Correctly assign the returned ID string
+      const campaignId = await createCampaignStore(user.uid, campaignOptions); 
+      
+      // Validate the received ID
+      if (!campaignId || typeof campaignId !== 'string') {
+          throw new Error("Failed to retrieve valid campaign ID from store.");
+      }
+
       console.log(`Campaign document created with ID: ${campaignId}, Status: ${campaignOptions.status}`);
       
       updateProgress(25, "Campaña registrada. Verificando estado...");
@@ -470,54 +503,59 @@ const NuevaCampanaModal = ({ isOpen, onClose, user, instagramToken, onCampaignCr
         if (typeof onCampaignCreated === 'function') { // <-- Call the callback
           onCampaignCreated();
         }
+        resetModalState(); // Reset state before closing
         onClose(); // Close the modal
-        // showNotification("Campaña programada en cola.", "info"); // Notify user (handled by Dashboard maybe?)
-        return campaignId; // Return ID even if scheduled
+        return { scheduled: true, started: false, campaignId: campaignId }; // <-- Return ID correctly
       }
 
       // 5. If NOT scheduled, attempt to activate it immediately.
       updateProgress(30, "Activando campaña...");
-      const activated = await activateCampaign(user.uid, { id: campaignId, ...campaignOptions }, instagramToken);
+      // Start monitoring *after* activation is confirmed
+      // Get JWT token from localStorage
+      const jwtToken = localStorage.getItem('instagram_bot_token'); 
 
-      if (activated) {
-        console.log(`Campaign ${campaignId} activated successfully.`);
-        updateProgress(40, "Campaña activada. Iniciando monitoreo...");
-        // Start monitoring *after* activation is confirmed
-        const { stopMonitoring } = startCampaignMonitoring(user.uid, campaignId, (update) => {
-          // Handle real-time updates from monitoring
-          updateProgress(update.progress, update.message);
-          if (update.status === 'completed' || update.status === 'failed') {
-            if (typeof onCampaignCreated === 'function') { // <-- Call the callback on completion/failure too
-              onCampaignCreated();
+      const { stopMonitoring } = startCampaignMonitoring(user.uid, campaignId, {
+          // Pass both tokens
+          token: instagramToken, // Instagram session token
+          jwtToken: jwtToken,    // Application JWT token
+          // The callback signature was different in the read content vs previous assumption.
+          // Assuming the callback passed is for progress updates only.
+          onUpdate: (update) => { 
+            updateProgress(update.progress, update.message);
+            if (update.status === 'completed' || update.status === 'failed') {
+              if (typeof onCampaignCreated === 'function') {
+                onCampaignCreated();
+              }
             }
-            // Optionally close modal automatically on completion/failure
-            // setLoading(false);
-            // onClose(); 
           }
         });
-        // Store stopMonitoring function if needed elsewhere, maybe tied to modal close?
-        
-        // Since activation succeeded and monitoring started, trigger refresh and close.
-        if (typeof onCampaignCreated === 'function') { // <-- Call the callback after activation
-          onCampaignCreated();
-        }
-        // setLoading(false); // Keep loading indicator while monitoring runs?
-        // onClose(); // Or keep modal open to show progress?
-        
-        return campaignId; // Return the ID of the activated campaign
-      } else {
-        // Activation failed (logged within activateCampaign)
-        console.error(`Failed to activate campaign ${campaignId}. It remains in 'pending' state.`);
-        setError("No se pudo activar la campaña. Revise la conexión de Instagram.");
-        updateProgress(100, "Error al activar la campaña.");
-        // Even if activation failed, the record exists, so trigger refresh?
-        if (typeof onCampaignCreated === 'function') { 
-          onCampaignCreated();
-        }
-        setLoading(false);
-        return campaignId; // Return ID even if activation failed
+      // Store stopMonitoring function if needed elsewhere, maybe tied to modal close?
+      
+      // Since activation succeeded and monitoring started, trigger refresh and close.
+      if (typeof onCampaignCreated === 'function') { // <-- Call the callback after activation
+        onCampaignCreated();
       }
+      // setLoading(false); // Keep loading indicator while monitoring runs?
+      // onClose(); // Or keep modal open to show progress?
+      
+      // Pass the correct campaignId and the rest of the data needed by activateCampaign
+      const campaignDataForActivation = { id: campaignId, ...campaignOptions }; 
+      
+      // *** Log DATA BEING PASSED TO activateCampaign (Relevant Fields Only) ***
+      console.log(
+        `[Modal prepareAndSchedule] Data for activateCampaign: `,
+        {
+          id: campaignDataForActivation.id,
+          campaignType: campaignDataForActivation.campaignType,
+          message: campaignDataForActivation.message, // Check this field
+          messageTemplate: campaignDataForActivation.messageTemplate, // Check this field (might be undefined)
+          hasTargetUsers: Array.isArray(campaignDataForActivation.targetUsers) && campaignDataForActivation.targetUsers.length > 0,
+        }
+      );
 
+      const activated = await activateCampaign(user.uid, campaignDataForActivation, instagramToken);
+      
+      return { scheduled: false, started: true, campaignId: campaignId }; // <-- Return ID correctly
     } catch (error) {
       console.error("Error preparing/scheduling campaign:", error);
       setError(`Error al preparar la campaña: ${error.message}`);
@@ -740,7 +778,7 @@ if (users.length === 0) {
         Nueva Campaña - Paso {step} de {step === 5 ? 5 : 4}
       </h2>
       <button
-        onClick={onClose}
+        onClick={() => { resetModalState(); onClose(); }}
         className="text-gray-500 hover:text-gray-700 bg-transparent border-0 p-2 rounded-full hover:bg-gray-100">
         <FaTimes size={16} />
       </button>
@@ -797,13 +835,14 @@ if (users.length === 0) {
               </div>
               
               <div className="pl-8 sm:pl-10 space-y-1 sm:space-y-2">
-                <label className="flex items-center space-x-2 text-black text-sm sm:text-base">
+                <label className="flex items-center space-x-2 text-black text-sm sm:text-base opacity-50 cursor-not-allowed"> {/* Disabled styling */}
                   <input 
                     type="radio"
                     checked={selectedObjective === "comentarios"}
                     onChange={() => setSelectedObjective("comentarios")}
                     name="objective"
                     className="w-4 h-4 sm:w-5 sm:h-5"
+                    disabled // Disable input
                   />
                   <span>Comentarios de la publicación (próximamente)</span>
                 </label>
@@ -815,17 +854,19 @@ if (users.length === 0) {
                     onChange={() => setSelectedObjective("likes")}
                     name="objective"
                     className="w-4 h-4 sm:w-5 sm:h-5"
+                    // Not disabled
                   />
                   <span>Likes de la publicación</span>
                 </label>
                 
-                <label className="flex items-center space-x-2 text-black text-sm sm:text-base">
+                <label className="flex items-center space-x-2 text-black text-sm sm:text-base opacity-50 cursor-not-allowed"> {/* Disabled styling */}
                   <input 
                     type="radio"
                     checked={selectedObjective === "seguidores"}
                     onChange={() => setSelectedObjective("seguidores")}
                     name="objective"
                     className="w-4 h-4 sm:w-5 sm:h-5"
+                    disabled // Disable input
                   />
                   <span>Seguidores del perfil (próximamente)</span>
                 </label>
@@ -843,7 +884,7 @@ if (users.length === 0) {
                   </div>
                   
                   <div className="pl-10 space-y-2 text-black">
-                    <label className="flex items-center space-x-2">
+                    <label className="flex items-center space-x-2 opacity-50 cursor-not-allowed"> {/* Disabled styling */}
                       <input 
                         type="radio"
                         checked={tasks.seguir}
@@ -856,8 +897,9 @@ if (users.length === 0) {
                         })}
                         name="task"
                         className="w-5 h-5"
+                        disabled // Disable input
                       />
-                      <span>Seguir instagrammers (próximamente</span>
+                      <span>Seguir instagrammers (próximamente)</span>
                     </label>
                     
                     <label className="flex items-center space-x-2">
@@ -873,11 +915,12 @@ if (users.length === 0) {
                         })}
                         name="task"
                         className="w-5 h-5"
+                         // Not disabled
                       />
                       <span>Enviar Mensaje</span>
                     </label>
                     
-                    <label className="flex items-center space-x-2">
+                    <label className="flex items-center space-x-2 opacity-50 cursor-not-allowed"> {/* Disabled styling */}
                       <input 
                         type="radio"
                         checked={tasks.darLikes}
@@ -890,11 +933,12 @@ if (users.length === 0) {
                         })}
                         name="task"
                         className="w-5 h-5"
+                        disabled // Disable input
                       />
                       <span>Dar likes a las publicaciones (próximamente)</span>
                     </label>
                     
-                    <label className="flex items-center space-x-2">
+                    <label className="flex items-center space-x-2 opacity-50 cursor-not-allowed"> {/* Disabled styling */}
                       <input 
                         type="radio"
                         checked={tasks.comentar}
@@ -907,6 +951,7 @@ if (users.length === 0) {
                         })}
                         name="task"
                         className="w-5 h-5"
+                        disabled // Disable input
                       />
                       <span>Comentar en sus publicaciones (próximamente)</span>
                     </label>
@@ -1155,7 +1200,7 @@ if (users.length === 0) {
               Puedes seguir su progreso en la sección de Campañas.
             </p>
             <button 
-              onClick={onClose}
+              onClick={() => { resetModalState(); onClose(); }}
               className="bg-blue-600 text-white px-4 sm:px-6 py-1.5 sm:py-2 text-sm sm:text-base rounded-lg hover:bg-blue-700"
             >
               Entendido
@@ -1177,7 +1222,7 @@ if (users.length === 0) {
               se iniciará automáticamente cuando la campaña activa actual finalice.
             </p>
             <button 
-              onClick={onClose}
+              onClick={() => { resetModalState(); onClose(); }}
               className="bg-blue-600 text-white px-4 sm:px-6 py-1.5 sm:py-2 text-sm sm:text-base rounded-lg hover:bg-blue-700"
             >
               Entendido

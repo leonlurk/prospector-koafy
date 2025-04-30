@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from "react";
 import { db, auth } from "./firebaseConfig";
-import { collection, addDoc, getDocs, doc, setDoc, getDoc } from "firebase/firestore";
+import { collection, addDoc, getDocs, doc, setDoc, getDoc, query, orderBy, onSnapshot } from "firebase/firestore";
 import { useNavigate } from "react-router-dom";
 import Sidebar from "./Sidebar";
 import { FaSearch, FaPlus, FaSlidersH, FaBars, FaBan } from "react-icons/fa";
@@ -116,6 +116,8 @@ const Dashboard = () => {
   const [isNewCampaignModalOpen, setIsNewCampaignModalOpen] = useState(false);
   const [processingScheduled, setProcessingScheduled] = useState(false);
   const [campaignListVersion, setCampaignListVersion] = useState(0);
+  const [allCampaigns, setAllCampaigns] = useState([]);
+  const [isLoadingCampaigns, setIsLoadingCampaigns] = useState(true);
 
   // Determine the current tool context
   const currentToolContext = getToolContext(selectedOption);
@@ -134,6 +136,9 @@ const Dashboard = () => {
   };
 
   const handleSidebarOptionChange = (option) => {
+    // Save the selected option to localStorage
+    localStorage.setItem('lastSelectedOption', option);
+
     if (option === "Nueva Campaña") {
       if (isInstagramConnected) {
         setIsNewCampaignModalOpen(true);
@@ -142,6 +147,7 @@ const Dashboard = () => {
         // Mostrar una notificación o redireccionar a conectar Instagram
         showNotificationFunc("Debes conectar tu cuenta de Instagram primero", "warning");
         setSelectedOption("Conectar Instagram");
+        localStorage.setItem('lastSelectedOption', "Conectar Instagram"); // Save this state too
         setShowSidebar(false);
       }
     } else {
@@ -295,6 +301,15 @@ const Dashboard = () => {
         setIsLoading(true);
         fetchTemplates(currentUser.uid);
   
+        // Check for saved option from localStorage FIRST
+        const savedOption = localStorage.getItem('lastSelectedOption');
+        let initialOption = null;
+        if (savedOption) {
+            // Optional: Add validation here if needed (e.g., ensure savedOption is valid)
+            initialOption = savedOption;
+            console.log("Restoring selected option from localStorage:", savedOption);
+        }
+  
         try {
           // Obtener sesión de Instagram desde Firebase
           const instagramSession = await getInstagramSession(currentUser.uid);
@@ -327,19 +342,38 @@ const Dashboard = () => {
   
             if (sessionValid) {
               setInstagramToken(instagramSession.token);
-              setSelectedOption("Home");  // Cambiar a Home cuando hay sesión válida
+              // Set default option ONLY if no saved option was found
+              if (!initialOption) {
+                  initialOption = "Home"; 
+                  console.log("Setting initial option to Home (session valid, no saved option).");
+              }
             } else {
               // La sesión expiró, limpiar datos
               await clearInstagramSession(currentUser.uid);
-              setSelectedOption("Conectar Instagram");  // Mantener el comportamiento para sesiones expiradas
+              // Set default option ONLY if no saved option was found
+              if (!initialOption) {
+                  initialOption = "Conectar Instagram";
+                  console.log("Setting initial option to Conectar Instagram (session invalid, no saved option).");
+              }
             }
           } else {
-            setSelectedOption("Conectar Instagram");
+             // No Instagram session found
+             // Set default option ONLY if no saved option was found
+             if (!initialOption) {
+                 initialOption = "Conectar Instagram";
+                 console.log("Setting initial option to Conectar Instagram (no session found, no saved option).");
+             }
           }
         } catch (error) {
           console.error("Error al recuperar sesión de Instagram:", error);
-          setSelectedOption("Conectar Instagram");
+          // Set default option ONLY if no saved option was found
+          if (!initialOption) {
+              initialOption = "Conectar Instagram";
+              console.log("Setting initial option to Conectar Instagram (error loading session, no saved option).");
+          }
         } finally {
+          // Set the selected option state AFTER all checks
+          setSelectedOption(initialOption || "Home"); // Fallback to Home just in case
           setIsLoading(false);
         }
       }
@@ -423,6 +457,43 @@ const Dashboard = () => {
       clearInterval(intervalId);
     };
   }, [user, processingScheduled]); // Dependencias
+
+  // --- useEffect for Real-time Campaign Listener --- 
+  useEffect(() => {
+    if (!user?.uid) {
+      setAllCampaigns([]); // Clear campaigns if user logs out
+      setIsLoadingCampaigns(false);
+      return; // No user, no listener
+    }
+
+    setIsLoadingCampaigns(true);
+    const campaignsRef = collection(db, "users", user.uid, "campaigns");
+    const q = query(campaignsRef, orderBy("createdAt", "desc"));
+
+    const unsubscribe = onSnapshot(q, 
+      (snapshot) => {
+        const campaignsData = snapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data(),
+          createdAt: doc.data().createdAt?.toDate ? doc.data().createdAt.toDate() : null,
+          lastUpdated: doc.data().lastUpdated?.toDate ? doc.data().lastUpdated.toDate() : null,
+          endedAt: doc.data().endedAt?.toDate ? doc.data().endedAt.toDate() : null,
+          scheduledAt: doc.data().scheduledAt?.toDate ? doc.data().scheduledAt.toDate() : null,
+        }));
+        setAllCampaigns(campaignsData); // Update state with all campaigns
+        setIsLoadingCampaigns(false);
+      },
+      (error) => {
+        console.error("Error listening to campaign changes in Dashboard:", error);
+        setIsLoadingCampaigns(false);
+        // Handle listener error (e.g., show notification)
+      }
+    );
+
+    // Cleanup listener
+    return () => unsubscribe();
+
+  }, [user?.uid]); // Re-run if user changes
 
   // Guarda plantilla
   const saveTemplate = async () => {
@@ -521,12 +592,16 @@ const Dashboard = () => {
     // o tener un mapeo claro.
     switch (selectedOption) {
         case 'Home':
+            // Pass relevant campaign data down to HomeDashboard
+            const latestActiveCampaign = allCampaigns.find(c => c.status === 'processing');
             return <HomeDashboard 
                      user={user} 
                      onCreateCampaign={() => setIsNewCampaignModalOpen(true)} 
                      navigateToCampaigns={navigateToCampaigns} 
                      isInstagramConnected={isInstagramConnected}
                      showNotification={showNotificationFunc}
+                     activeCampaign={latestActiveCampaign}
+                     isLoading={isLoadingCampaigns}
                    />;
         case 'Campañas':
             return <CampaignsPanel 
@@ -606,9 +681,6 @@ const Dashboard = () => {
                       <div className="overflow-hidden">
                         <p className="font-semibold text-black truncate text-sm md:text-base">
                           {template.name}
-                        </p>
-                        <p className="text-xs md:text-sm text-gray-500 truncate">
-                          {template.platform || "Sin plataforma"}
                         </p>
                       </div>
                     </div>

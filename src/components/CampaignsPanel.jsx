@@ -1,6 +1,8 @@
 import { useState, useEffect, useCallback } from "react";
 import PropTypes from 'prop-types';
-import { getActiveCampaigns, getRecentCampaigns, cancelCampaign, checkAndActivateNextScheduled, pauseCampaign, resumeCampaign, updateCampaign } from "../campaignStore";
+import { cancelCampaign, checkAndActivateNextScheduled, pauseCampaign, resumeCampaign, updateCampaign } from "../campaignStore";
+import { db } from "../firebaseConfig";
+import { collection, query, orderBy, onSnapshot } from "firebase/firestore";
 import logApiRequest from "../requestLogger";
 import CampaignDetailsModal from "./CampaignDetailsModal";
 import { calculateCampaignProgress } from "../campaignSimulator";
@@ -9,7 +11,6 @@ import { FaPause, FaPlay, FaTrash } from 'react-icons/fa';
 const CampaignsPanel = ({ user, onRefreshStats, onCreateCampaign, refreshTrigger }) => {
   const [campaigns, setCampaigns] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [refreshKey, setRefreshKey] = useState(0);
   const [dropdownState, setDropdownState] = useState({
     estado: false,
     tipo: false
@@ -78,7 +79,18 @@ const CampaignsPanel = ({ user, onRefreshStats, onCreateCampaign, refreshTrigger
                 campaign.totalProcessed !== newProcessed ||
                 campaign.targetCount !== newTargetCount) {
               
+              // *** SAVE intermediate progress to Firestore ***
+              updateCampaign(user.uid, campaign.id, {
+                progress: newPercentage, 
+                totalProcessed: newProcessed,
+                targetCount: newTargetCount // Update target count if simulator adjusted it
+              }).catch(err => {
+                 console.error(`Error updating Firestore progress for ${campaign.id}:`, err);
+              });
+              // *** End Firestore Update ***
+
               campaignsUpdated = true;
+              // Update local state immediately for responsiveness
               return {
                 ...campaign,
                 progress: newPercentage,
@@ -100,78 +112,53 @@ const CampaignsPanel = ({ user, onRefreshStats, onCreateCampaign, refreshTrigger
     });
   }, [user?.uid]);
 
-  // Función para obtener las campañas
-  const fetchCampaigns = useCallback(async () => {
-    if (!user?.uid) return;
-    
-    try {
-      setLoading(true);
-      
-      // Registrar la solicitud de carga de campañas
-      await logApiRequest({
-        endpoint: "internal/fetch_campaigns",
-        requestData: {},
-        userId: user.uid,
-        status: "pending",
-        source: "CampaignsPanel"
-      });
-      
-      // Obtener campañas activas
-      const active = await getActiveCampaigns(user.uid);
-      
-      // Obtener campañas recientes (incluye completadas, pausadas, etc.)
-      const recent = await getRecentCampaigns(user.uid, 15);
-      
-      // Combinar y eliminar duplicados
-      const allCampaigns = [...active];
-      
-      // Añadir campañas recientes que no estén ya en las activas
-      recent.forEach(recentCampaign => {
-        if (!allCampaigns.some(c => c.id === recentCampaign.id)) {
-          allCampaigns.push(recentCampaign);
-        }
-      });
-      
-      // Actualizamos el estado
-      setCampaigns(allCampaigns);
-      
-      // Registrar éxito
-      await logApiRequest({
-        endpoint: "internal/fetch_campaigns",
-        requestData: {},
-        userId: user.uid,
-        responseData: { campaignsCount: allCampaigns.length },
-        status: "success",
-        source: "CampaignsPanel"
-      });
-      
-    } catch (error) {
-      console.error("Error al cargar campañas:", error);
-      
-      // Registrar error
-      await logApiRequest({
-        endpoint: "internal/fetch_campaigns",
-        requestData: {},
-        userId: user.uid,
-        status: "error",
-        source: "CampaignsPanel",
-        metadata: {
-          action: "fetch_campaigns",
-          error: error.message
-        }
-      });
-      
-    } finally {
-      setLoading(false);
-    }
-  }, [user, refreshTrigger]);
-
-  // Cargar campañas al montar el componente y cuando cambie el refreshKey o refreshTrigger
+  // --- ADD useEffect for Real-time Listener --- 
   useEffect(() => {
-    if (user?.uid) {
-      fetchCampaigns();
+    if (!user?.uid) {
+      setCampaigns([]); // Clear campaigns if user logs out
+      setLoading(false);
+      return; // No user, no listener
     }
-  }, [fetchCampaigns, refreshKey, user, refreshTrigger]);
+
+    setLoading(true);
+    console.log("Setting up campaign listener for user:", user.uid);
+
+    const campaignsRef = collection(db, "users", user.uid, "campaigns");
+    const q = query(campaignsRef, orderBy("createdAt", "desc")); // Order by most recent
+
+    const unsubscribe = onSnapshot(q, 
+      (snapshot) => {
+        console.log(`Campaign listener update: ${snapshot.docs.length} docs found.`);
+        const campaignsData = snapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data(),
+          // Ensure dates are converted (onSnapshot might not do this automatically)
+          createdAt: doc.data().createdAt?.toDate ? doc.data().createdAt.toDate() : null,
+          lastUpdated: doc.data().lastUpdated?.toDate ? doc.data().lastUpdated.toDate() : null,
+          endedAt: doc.data().endedAt?.toDate ? doc.data().endedAt.toDate() : null,
+          scheduledAt: doc.data().scheduledAt?.toDate ? doc.data().scheduledAt.toDate() : null,
+        }));
+        setCampaigns(campaignsData); // Replace state with fresh data
+        setLoading(false);
+      },
+      (error) => {
+        console.error("Error listening to campaign changes:", error);
+        logApiRequest({
+          endpoint: "internal/onSnapshot_error", requestData: { collection: `users/${user.uid}/campaigns` }, userId: user.uid,
+          status: "error", source: "CampaignsPanelListener", metadata: { action: "campaign_listener", error: error.message }
+        });
+        setLoading(false);
+        // Optionally set an error state here
+      }
+    );
+
+    // Cleanup function to unsubscribe when component unmounts or user changes
+    return () => {
+      console.log("Cleaning up campaign listener for user:", user.uid);
+      unsubscribe();
+    };
+
+  }, [user?.uid]); // Dependency: Re-run only if user.uid changes
 
   // Programar actualizaciones periódicas si hay campañas activas
   useEffect(() => {
@@ -198,9 +185,10 @@ const CampaignsPanel = ({ user, onRefreshStats, onCreateCampaign, refreshTrigger
     const backendQueueId = campaign.initialResponse?.queue_id;
     console.log(`Intentando pausar Firestore ID: ${campaignId}, Backend Queue ID: ${backendQueueId}`);
 
+    // Check if backendQueueId exists before proceeding
     if (!backendQueueId) {
       console.error("handlePauseCampaign: Falta backendQueueId para manejar la campaña", campaign);
-      showNotification("Error interno: No se encontró el ID de la cola del backend.", "error");
+      alert("Error interno: No se encontró el ID necesario para pausar esta campaña.");
       return;
     }
 
@@ -211,7 +199,7 @@ const CampaignsPanel = ({ user, onRefreshStats, onCreateCampaign, refreshTrigger
       console.log(`handlePauseCampaign: Retrieved token from localStorage. Type: ${typeof jwtToken}, Length: ${jwtToken?.length}, StartsWith: ${jwtToken?.substring(0, 10)}`); // More detailed log
       if (!jwtToken) {
         console.error("Cannot pause campaign: User not authenticated.");
-        showNotification("Error de autenticación. Por favor, inicia sesión de nuevo.", "error");
+        alert("Error de autenticación. Por favor, inicia sesión de nuevo.");
         return;
       }
       // --- End JWT Auth Token ---
@@ -227,13 +215,12 @@ const CampaignsPanel = ({ user, onRefreshStats, onCreateCampaign, refreshTrigger
       
       if (success) {
         console.log(`Pausa exitosa para ${campaignId}`);
-        setRefreshKey(prev => prev + 1); // Refrescar la lista para ver el cambio de estado
         // Loggear éxito (opcional pero recomendado)
         await logApiRequest({
           endpoint: "internal/pause_campaign", requestData: { campaignId }, userId: user.uid,
           status: "success", source: "CampaignsPanel", metadata: { action: "pause_campaign" }
         });
-        showNotification("Campaña pausada", "success");
+        alert("Campaña pausada");
       } else {
         console.error(`Error al pausar ${campaignId}`);
         // Loggear error (opcional)
@@ -245,7 +232,7 @@ const CampaignsPanel = ({ user, onRefreshStats, onCreateCampaign, refreshTrigger
       }
     } catch (error) {
       console.error("Error al pausar campaña:", error);
-      showNotification(`Error al pausar campaña: ${error.message}`, "error"); // Show error message
+      alert(`Error al pausar campaña: ${error.message}`);
     }
   };
 
@@ -285,7 +272,6 @@ const CampaignsPanel = ({ user, onRefreshStats, onCreateCampaign, refreshTrigger
 
       if (success) {
         console.log(`Reanudación/encolado exitoso para ${campaignId}`);
-        setRefreshKey(prev => prev + 1); // Refrescar la lista
         // Loggear éxito
         await logApiRequest({
           endpoint: "internal/resume_campaign", requestData: { campaignId }, userId: user.uid,
@@ -343,15 +329,6 @@ const CampaignsPanel = ({ user, onRefreshStats, onCreateCampaign, refreshTrigger
       const success = await cancelCampaign(user.uid, campaignId, backendQueueId, jwtToken);
       
       if (success) {
-        setRefreshKey(prev => prev + 1);
-        await logApiRequest({
-          endpoint: "internal/cancel_campaign",
-          requestData: { campaignId },
-          userId: user.uid,
-          status: "success",
-          source: "CampaignsPanel"
-        });
-        
         console.log(`Campaña ${campaignId} cancelada. Verificando si hay otra en cola...`);
         await checkAndActivateNextScheduled(user.uid);
         

@@ -31,6 +31,9 @@ export const createCampaign = async (userId, campaignData) => {
       totalProcessed: 0
     };
     
+    // *** Log ANTES de addDoc ***
+    console.log("[Store createCampaign] campaignDataToSave before addDoc:", JSON.stringify(campaignDataToSave, null, 2));
+
     // Crear el documento
     const docRef = await addDoc(campaignsRef, campaignDataToSave);
     
@@ -262,11 +265,11 @@ export const getOldestScheduledCampaign = async (userId) => {
  * @returns {Promise<boolean>} - true si la activación fue exitosa (API llamada), false si hubo error.
  */
 export const activateCampaign = async (userId, campaign, instagramToken) => {
-  if (!campaign || !campaign.id || !campaign.taskType) {
-    console.error("activateCampaign: Datos de campaña inválidos.", campaign);
+  if (!campaign || !campaign.id || !campaign.campaignType) { 
+    console.error("activateCampaign: Datos de campaña inválidos (check id, campaignType).", campaign);
     return false;
   }
-  console.log(`Activando campaña ${campaign.id} (${campaign.taskType})`);
+  console.log(`Activando campaña ${campaign.id} (${campaign.campaignType})`);
 
   try {
     // 1. Marcar como 'processing'
@@ -279,23 +282,39 @@ export const activateCampaign = async (userId, campaign, instagramToken) => {
 
     // 2. Ejecutar la acción de la API
     let apiResponse = null;
-    const usersToProcess = campaign.targetUserList || [];
-    if (usersToProcess.length === 0 && campaign.taskType !== 'some_task_without_users') { // Añadir excepciones si aplica
+    const usersToProcess = campaign.targetUsers || [];
+    if (usersToProcess.length === 0 && campaign.campaignType !== 'some_task_without_users') { // Añadir excepciones si aplica
        throw new Error("No users found in target list during activation.");
     }
 
     // Loggear inicio de la acción
      await logApiRequest({
-        endpoint: `/activate_campaign/${campaign.taskType}`,
+        endpoint: `/activate_campaign/${campaign.campaignType}`,
         requestData: { campaignId: campaign.id, userCount: usersToProcess.length },
         userId: userId, status: 'pending', source: 'activateCampaign',
-        metadata: { action: `start_${campaign.taskType}`, campaignId: campaign.id }
+        metadata: { action: `start_${campaign.campaignType}`, campaignId: campaign.id }
     });
 
-    switch (campaign.taskType) {
+    switch (campaign.campaignType) {
       case 'send_messages':
-        if (!campaign.message) throw new Error("Mensaje no encontrado para activar campaña.");
-        apiResponse = await instagramApi.sendMessages(usersToProcess, campaign.message, false, instagramToken);
+        // Refined check for message content
+        const messageContent = campaign.message || campaign.messageTemplate; // Prefer message if it exists
+        console.log(`[activateCampaign] Trying to send message. Content found:`, !!messageContent, `(Value: ${messageContent ? messageContent.substring(0,30)+'...' : 'N/A'})`);
+        
+        if (!messageContent) { 
+          console.error("[activateCampaign] Message content is definitively missing:", campaign);
+          throw new Error("Contenido del mensaje (message o messageTemplate) no encontrado para activar campaña.");
+        }
+
+        // *** THE API CALL ITSELF ***
+        console.log(`---> Calling instagramApi.sendMessages with ${usersToProcess.length} users for campaign ${campaign.id}. Token provided: ${!!instagramToken}`);
+        try {
+            apiResponse = await instagramApi.sendMessages(usersToProcess, messageContent, false, instagramToken);
+            console.log(`---> instagramApi.sendMessages response for ${campaign.id}:`, apiResponse); 
+        } catch (apiError) {
+             console.error(`---> Error DIRECTLY from instagramApi.sendMessages for ${campaign.id}:`, apiError);
+             throw apiError; // Re-throw the specific API error
+        }
         break;
       case 'follow_users':
         apiResponse = await instagramApi.followUsers(usersToProcess, instagramToken);
@@ -305,8 +324,12 @@ export const activateCampaign = async (userId, campaign, instagramToken) => {
         apiResponse = { status: 'success', message: 'Like campaign activation simulated' };
         break;
       case 'comment_posts':
-         if (!campaign.message) throw new Error("Comentario no encontrado para activar campaña.");
-        console.warn("Activando campaña de comentarios (backend debería manejar API/bucle)");
+         if (!campaign.message && !campaign.messageTemplate) { 
+           console.error("Comment content missing in:", campaign);
+           throw new Error("Comentario/Plantilla no encontrado para activar campaña.");
+         }
+         const commentContent = campaign.messageTemplate || campaign.message;
+         console.warn("Activando campaña de comentarios (backend debería manejar API/bucle)");
          apiResponse = { status: 'success', message: 'Comment campaign activation simulated' };
         break;
       case 'send_media':
@@ -316,7 +339,7 @@ export const activateCampaign = async (userId, campaign, instagramToken) => {
         apiResponse = { status: 'success', message: 'Media campaign activation simulated' };
         break;
       default:
-        throw new Error(`Tipo de tarea desconocido al activar: ${campaign.taskType}`);
+        throw new Error(`Tipo de tarea desconocido al activar: ${campaign.campaignType}`);
     }
     
     console.log(`API para campaña ${campaign.id} ejecutada tras activación, respuesta:`, apiResponse?.status);
@@ -329,10 +352,10 @@ export const activateCampaign = async (userId, campaign, instagramToken) => {
 
      // Loggear éxito
      await logApiRequest({
-        endpoint: `/activate_campaign/${campaign.taskType}`,
+        endpoint: `/activate_campaign/${campaign.campaignType}`,
         requestData: { campaignId: campaign.id }, userId: userId, responseData: apiResponse, 
         status: apiResponse?.status === 'success' ? 'success' : 'completed', source: 'activateCampaign',
-        metadata: { action: `activated_${campaign.taskType}`, campaignId: campaign.id, apiStatus: apiResponse?.status }
+        metadata: { action: `activated_${campaign.campaignType}`, campaignId: campaign.id, apiStatus: apiResponse?.status }
     });
 
     return true;
@@ -348,9 +371,10 @@ export const activateCampaign = async (userId, campaign, instagramToken) => {
         lastUpdated: new Date()
       });
       await logApiRequest({ // Loggear el fallo
-          endpoint: `/activate_campaign/${campaign.taskType}`,
+          endpoint: `/activate_campaign/${campaign.campaignType}`,
           requestData: { campaignId: campaign.id }, userId: userId, status: 'error',
-          source: 'activateCampaign', metadata: { action: `failed_activation_${campaign.taskType}`, campaignId: campaign.id, error: error.message }
+          source: 'activateCampaign', 
+          metadata: { action: `failed_activation_${campaign.campaignType}`, campaignId: campaign.id, error: error.message }
       });
     } catch (updateError) {
       console.error(`Error al marcar campaña ${campaign.id} como fallida tras error de activación:`, updateError);

@@ -16,24 +16,41 @@ export const createCampaignOptions = (options = {}) => {
     endpoint,
     mediaType,
     fileName,
-    templateName,
     postLink,
     processingRate, // Nueva opción para tasa personalizada
+    messageTemplate // Use this for the actual message content passed from modal
   } = options;
 
-  // Determinar tasa de procesamiento según el tipo de campaña
+  // Determinar tasa de procesamiento y ENDPOINT según el tipo de campaña
   let ratePerHour;
-  
+  let apiEndpoint; // Variable para guardar el endpoint
+
   switch (type) {
     case "send_messages":
+      ratePerHour = 3;
+      apiEndpoint = "/enviar_mensajes_multiple"; // Endpoint para enviar mensajes
+      break;
     case "send_media":
-      ratePerHour = 3; // 3 mensajes por hora
+      ratePerHour = 3;
+      // Definir el endpoint para enviar media si es diferente
+      apiEndpoint = "/send_media_endpoint"; // <-- ¡¡AJUSTA ESTE ENDPOINT!!
       break;
     case "follow_users":
-      ratePerHour = 10; // 10 seguimientos por hora
+      ratePerHour = 10;
+      apiEndpoint = "/seguir_usuarios"; // Endpoint para seguir usuarios
+      break;
+    case "like_posts":
+      ratePerHour = 15; // Ejemplo
+      apiEndpoint = "/like_posts_endpoint"; // <-- ¡¡AJUSTA ESTE ENDPOINT!!
+      break;
+    case "comment_posts":
+      ratePerHour = 5; // Ejemplo
+      apiEndpoint = "/comment_posts_endpoint"; // <-- ¡¡AJUSTA ESTE ENDPOINT!!
       break;
     default:
-      ratePerHour = 3; // Valor por defecto
+      ratePerHour = 3;
+      apiEndpoint = "/default_endpoint"; // Endpoint por defecto o lanzar error
+      console.warn(`Tipo de campaña desconocido '${type}' al determinar endpoint. Usando default.`);
   }
   
   // Usar tasa personalizada si se proporciona
@@ -51,7 +68,7 @@ export const createCampaignOptions = (options = {}) => {
     targetUsers: users,
     targetCount: users.length,
     originalTargetCount: users.length, // Añadido para seguimiento de filtrados
-    endpoint: endpoint,
+    endpoint: apiEndpoint,
     createdAt: new Date(),
     status: "processing",
     progress: 0,
@@ -67,8 +84,8 @@ export const createCampaignOptions = (options = {}) => {
       return {
         ...campaignData,
         name: name || `Envío de mensajes (${users.length} usuarios)`,
-        templateName: templateName || null, // Evitar undefined
-        postLink: postLink || null, // Evitar undefined
+        postLink: postLink || null,
+        message: messageTemplate || null
       };
 
       case "send_media":
@@ -102,6 +119,7 @@ export const createCampaignOptions = (options = {}) => {
 export const startCampaignMonitoring = (userId, campaignId, options = {}) => {
   const { 
     token,
+    jwtToken,
     initialDelay = 5000, // Esperar 5 segundos antes del primer check
     checkInterval = 60000, // Verificar cada 60 segundos (aumentado para evitar demasiadas solicitudes)
     maxChecks = 200, // Aumentado significativamente para campañas largas (hasta ~3 horas)
@@ -112,7 +130,7 @@ export const startCampaignMonitoring = (userId, campaignId, options = {}) => {
 
   // Primera verificación después de initialDelay
   const initialTimeoutId = setTimeout(() => {
-    checkCampaignStatus(userId, campaignId, token)
+    checkCampaignStatus(userId, campaignId, token, jwtToken)
       .then(shouldContinue => {
         if (shouldContinue) {
           // Iniciar verificaciones periódicas
@@ -138,7 +156,7 @@ export const startCampaignMonitoring = (userId, campaignId, options = {}) => {
             }
             
             // Verificar estado
-            const shouldContinue = await checkCampaignStatus(userId, campaignId, token);
+            const shouldContinue = await checkCampaignStatus(userId, campaignId, token, jwtToken);
             if (!shouldContinue && intervalId) {
               clearInterval(intervalId);
             }
@@ -161,10 +179,11 @@ export const startCampaignMonitoring = (userId, campaignId, options = {}) => {
  * Verifica el estado actual de una campaña usando la API
  * @param {string} userId - ID del usuario
  * @param {string} campaignId - ID de la campaña
- * @param {string} token - Token de autenticación para la API
+ * @param {string} token - Token de sesión de Instagram (puede ser obsoleto si no se usa)
+ * @param {string} jwtToken - Token de autenticación JWT de la aplicación
  * @returns {Promise<boolean>} - true si se debe seguir verificando, false si ya terminó
  */
-async function checkCampaignStatus(userId, campaignId, token) {
+async function checkCampaignStatus(userId, campaignId, token, jwtToken) {
   try {
     // Obtener la campaña actual para conocer sus detalles
     const campaign = await getCampaignDetails(userId, campaignId);
@@ -173,11 +192,19 @@ async function checkCampaignStatus(userId, campaignId, token) {
       return true; // Seguir monitoreando hasta que podamos obtener más información
     }
 
-    // Verificar el estado actual de la API
+    // Verificar el estado actual de la API - ** USAR JWT TOKEN **
+    if (!jwtToken) {
+        console.error("checkCampaignStatus: JWT token is missing. Cannot check usage stats.");
+        // Decide how to handle this - maybe keep monitoring assuming it might become available?
+        return true; // Continue monitoring for now
+    }
+    
     const response = await fetch(`${API_BASE_URL}/usage_stats`, {
       method: "GET",
       headers: {
-        token: token
+        // Use Authorization header with Bearer scheme for JWT
+        'Authorization': `Bearer ${jwtToken}` 
+        // 'token': token // Remove the old Instagram token header
       }
     });
 

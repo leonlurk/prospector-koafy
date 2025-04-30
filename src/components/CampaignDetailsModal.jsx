@@ -1,23 +1,8 @@
 import { useState, useEffect } from "react";
 import PropTypes from 'prop-types';
 import { FaTimes, FaTrash, FaInfoCircle, FaCalendarAlt, FaTasks, FaLink, FaEnvelope, FaComment, FaImage } from "react-icons/fa";
-import { doc, deleteDoc } from "firebase/firestore";
+import { doc, onSnapshot, deleteDoc, Timestamp } from "firebase/firestore";
 import { db } from "../firebaseConfig";
-import { getCampaignDetails } from "../campaignStore";
-
-// Helper para formatear fechas (simplificado si ya existe fuera)
-const formatDate = (dateParam) => {
-  if (!dateParam) return "N/A";
-  const date = dateParam instanceof Date ? dateParam : dateParam?.toDate ? dateParam.toDate() : new Date(dateParam);
-  if (isNaN(date.getTime())) return "Fecha inválida";
-  return date.toLocaleString('es-ES', {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit'
-  });
-};
 
 // Helper para formatear duración
 const formatDuration = (start, end) => {
@@ -49,29 +34,53 @@ const CampaignDetailsModal = ({ campaignId, userId, isOpen, onClose, onDelete })
   const [error, setError] = useState("");
 
   useEffect(() => {
-    const fetchCampaignDetails = async () => {
-      if (!isOpen || !campaignId || !userId) {
-        setCampaign(null); // Resetear si se cierra o no hay ID
-        setLoading(false);
-        return;
-      }
-      
-      try {
-        setLoading(true);
+    if (!isOpen || !userId || !campaignId) {
+      setLoading(false); // Don't load if modal isn't open or IDs are missing
+      setCampaign(null); // Clear campaign data if modal closed or IDs missing
+      return;
+    }
+
+    setLoading(true);
+    setError("");
+    console.log(`[Modal ${campaignId}] Setting up listener for user ${userId}, campaign ${campaignId}`);
+
+    const campaignRef = doc(db, "users", userId, "campaigns", campaignId);
+    const unsubscribe = onSnapshot(campaignRef, (docSnap) => {
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        console.log(`[Modal ${campaignId}] Snapshot received:`, data);
+        
+        // Process data before setting state
+        const processedData = {
+          ...data,
+          id: docSnap.id,
+          // Directly convert timestamps to locale strings, handle null/undefined
+          createdAtFormatted: data.createdAt?.toDate ? data.createdAt.toDate().toLocaleString() : 'N/A',
+          estimatedCompletionTimeFormatted: data.estimatedCompletionTime?.toDate ? data.estimatedCompletionTime.toDate().toLocaleString() : 'N/A',
+          lastUpdatedFormatted: data.lastUpdated?.toDate ? data.lastUpdated.toDate().toLocaleString() : 'N/A'
+        };
+        
+        setCampaign(processedData);
         setError("");
-        const campaignData = await getCampaignDetails(userId, campaignId);
-        setCampaign(campaignData);
-      } catch (error) {
-        console.error("Error al obtener detalles de la campaña:", error);
-        setError("No se pudieron cargar los detalles de la campaña.");
-      } finally {
-        setLoading(false);
+      } else {
+        console.log(`[Modal ${campaignId}] No such document!`);
+        setError("No se encontró la campaña.");
+        setCampaign(null);
       }
+      setLoading(false);
+    }, (err) => {
+      console.error(`[Modal ${campaignId}] Listener error:`, err);
+      setError("Error al cargar detalles de la campaña.");
+      setLoading(false);
+    });
+
+    // Cleanup listener
+    return () => {
+      console.log(`[Modal ${campaignId}] Cleaning up listener.`);
+      unsubscribe();
     };
-    
-    fetchCampaignDetails();
-    // Ejecutar solo cuando cambian estas props o se abre/cierra
-  }, [campaignId, userId, isOpen]); 
+
+  }, [isOpen, userId, campaignId]);
   
   const handleDeleteCampaign = async () => {
     if (!window.confirm("¿Estás seguro de eliminar esta campaña? Esta acción no se puede deshacer.")) {
@@ -177,8 +186,8 @@ const CampaignDetailsModal = ({ campaignId, userId, isOpen, onClose, onDelete })
                 <DetailItem label="Nombre" value={campaign.name} />
                 <DetailItem label="Estado" value={statusInfo.text} icon={statusInfo.icon} />
                 <DetailItem label="Tipo" value={typeInfo.text} icon={typeInfo.icon} />
-                <DetailItem label="Creada" value={formatDate(campaign.createdAt)} icon={FaCalendarAlt} />
-                {campaign.endedAt && <DetailItem label="Finalizada" value={formatDate(campaign.endedAt)} icon={FaCalendarAlt} />}
+                <DetailItem label="Creada" value={campaign.createdAtFormatted} icon={FaCalendarAlt} />
+                {campaign.endedAt && <DetailItem label="Finalizada" value={campaign.endedAtFormatted} icon={FaCalendarAlt} />}
                 {campaign.endedAt && <DetailItem label="Duración" value={duration} />}
               </DetailSection>
 

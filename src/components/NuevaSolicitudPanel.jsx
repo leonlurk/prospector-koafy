@@ -394,7 +394,11 @@ const NuevaCampanaModal = ({ isOpen, onClose, user, instagramToken }) => {
     }
   };
   
-  const followAllUsers = async () => {
+  const followAllUsers = async (campaignId) => {
+    if (!campaignId) {
+      setError("Error interno: No se proporcionó ID de campaña para seguir usuarios.");
+      return;
+    }
     if (users.length === 0) {
       setError("No hay usuarios para seguir");
       return;
@@ -404,28 +408,17 @@ const NuevaCampanaModal = ({ isOpen, onClose, user, instagramToken }) => {
     setError("");
     
     // Variables para campaña
-    let campaignId = null;
     let stopMonitoring = null;
     
     try {
-      // Crear una campaña para esta operación
-      if (user && user.uid) {
-        const campaignOptions = createCampaignOptions({
-          type: "follow_users",
-          users: users,
-          endpoint: "/seguir_usuarios",
-          postLink: targetLink
-        });
-        
-        campaignId = await createCampaign(user.uid, campaignOptions);
-        
-        // Iniciar monitoreo de la campaña
+      // Iniciar monitoreo AHORA que sabemos que la campaña existe
+      if (user && user.uid && campaignId) {
         stopMonitoring = startCampaignMonitoring(user.uid, campaignId, {
           token: instagramToken
         });
       }
-      
-      // Log the follow users attempt
+
+      // Log the follow users attempt (usar campaignId recibido)
       if (user) {
         await logApiRequest({
           endpoint: "/seguir_usuarios",
@@ -451,8 +444,8 @@ const NuevaCampanaModal = ({ isOpen, onClose, user, instagramToken }) => {
       if (filteredUsers.length === 0) {
         setError("Todos los usuarios están en listas negras. No se siguió a ningún usuario.");
         
-        // Si se creó una campaña, actualizarla como cancelada
-        if (campaignId) {
+        // Actualizar campaña como cancelada (usar campaignId recibido)
+        if (campaignId && user && user.uid) {
           await updateCampaign(user.uid, campaignId, {
             status: "cancelled",
             progress: 100,
@@ -485,8 +478,8 @@ const NuevaCampanaModal = ({ isOpen, onClose, user, instagramToken }) => {
       
       const data = await response.json();
       
-      // Actualizar campaña con información inicial
-      if (campaignId) {
+      // Actualizar campaña con información inicial (usar campaignId recibido)
+      if (campaignId && user && user.uid) {
         await updateCampaign(user.uid, campaignId, {
           progress: 10, // Inicio del proceso
           initialResponse: data,
@@ -535,8 +528,8 @@ const NuevaCampanaModal = ({ isOpen, onClose, user, instagramToken }) => {
       console.error("Error al seguir usuarios:", error);
       setError("Error al seguir usuarios: " + error.message);
       
-      // Actualizar campaña con el error
-      if (campaignId) {
+      // Actualizar campaña con el error (usar campaignId recibido)
+      if (campaignId && user && user.uid) {
         await updateCampaign(user.uid, campaignId, {
           status: "failed",
           progress: 100,
@@ -572,7 +565,11 @@ const NuevaCampanaModal = ({ isOpen, onClose, user, instagramToken }) => {
     }
   };
   
-  const sendMessages = async () => {
+  const sendMessages = async (campaignId) => {
+    if (!campaignId) {
+      setError("Error interno: No se proporcionó ID de campaña para enviar mensajes.");
+      return;
+    }
     if (users.length === 0) {
       setError("No hay usuarios para enviar mensajes");
       return;
@@ -587,39 +584,17 @@ const NuevaCampanaModal = ({ isOpen, onClose, user, instagramToken }) => {
     setError("");
     
     // Variables para campaña
-    let campaignId = null;
     let stopMonitoring = null;
     
     try {
-      // Crear una campaña para esta operación
-      if (user && user.uid) {
-        const campaignOptions = createCampaignOptions({
-          type: "send_messages",
-          users: users,
-          endpoint: "/enviar_mensajes_multiple",
-          templateName: selectedTemplate?.name || null,
-          postLink: targetLink
+      // Iniciar monitoreo AHORA que sabemos que la campaña existe
+      if (user && user.uid && campaignId) {
+        stopMonitoring = startCampaignMonitoring(user.uid, campaignId, {
+          token: instagramToken
         });
-        
-        try {
-          // Aseguramos que el documento del usuario exista antes de crear la campaña
-          await ensureUserExists(user.uid);
-          
-          campaignId = await createCampaign(user.uid, campaignOptions);
-          
-          // Iniciar monitoreo de la campaña solo si se creó exitosamente
-          if (campaignId) {
-            stopMonitoring = startCampaignMonitoring(user.uid, campaignId, {
-              token: instagramToken
-            });
-          }
-        } catch (campaignError) {
-          console.error("Error al crear la campaña:", campaignError);
-          // Continuar con el envío de mensajes incluso si falla la creación de la campaña
-        }
       }
-      
-      // Log the send messages attempt
+
+      // Log the send messages attempt (usar el campaignId recibido)
       if (user) {
         await logApiRequest({
           endpoint: "/enviar_mensajes_multiple",
@@ -627,7 +602,7 @@ const NuevaCampanaModal = ({ isOpen, onClose, user, instagramToken }) => {
             usuarios_count: users.length,
             mensaje_length: mensaje.length,
             template_id: selectedTemplate ? selectedTemplate.id : null,
-            campaign_id: campaignId || null
+            campaign_id: campaignId
           },
           userId: user.uid,
           status: "pending",
@@ -639,7 +614,7 @@ const NuevaCampanaModal = ({ isOpen, onClose, user, instagramToken }) => {
             templateId: selectedTemplate ? selectedTemplate.id : null,
             templateName: selectedTemplate ? selectedTemplate.name : null, 
             postLink: targetLink || null,
-            campaignId: campaignId || null
+            campaignId: campaignId
           }
         });
       }
@@ -650,8 +625,8 @@ const NuevaCampanaModal = ({ isOpen, onClose, user, instagramToken }) => {
       if (filteredUsers.length === 0) {
         setError("Todos los usuarios están en listas negras. No se enviaron mensajes.");
         
-        // Si se creó una campaña, actualizarla como cancelada
-        if (campaignId) {
+        // Actualizar campaña como cancelada (usar campaignId recibido)
+        if (campaignId && user && user.uid) {
           await updateCampaign(user.uid, campaignId, {
             status: "cancelled",
             progress: 100,
@@ -685,8 +660,8 @@ const NuevaCampanaModal = ({ isOpen, onClose, user, instagramToken }) => {
       
       const data = await response.json();
       
-      // Actualizar campaña con información inicial
-      if (campaignId) {
+      // Actualizar campaña con información inicial (usar campaignId recibido)
+      if (campaignId && user && user.uid) {
         await updateCampaign(user.uid, campaignId, {
           progress: 10, // Inicio del proceso
           initialResponse: data,
@@ -742,8 +717,8 @@ const NuevaCampanaModal = ({ isOpen, onClose, user, instagramToken }) => {
       console.error("Error al enviar mensajes:", error);
       setError("Error al enviar mensajes: " + error.message);
       
-      // Actualizar campaña con el error
-      if (campaignId) {
+      // Actualizar campaña con el error (usar campaignId recibido)
+      if (campaignId && user && user.uid) {
         await updateCampaign(user.uid, campaignId, {
           status: "failed",
           progress: 100,
@@ -859,10 +834,36 @@ const NuevaCampanaModal = ({ isOpen, onClose, user, instagramToken }) => {
         return;
       }
       
-      // Crear la campaña en Firestore
-      createCampaign();
+      setLoading(true); // Set loading before async operations
+      try {
+        // Crear la campaña en Firestore usando la función del modal
+        const campaignId = await createCampaign(); // This now calls the store
+        
+        if (campaignId) {
+          // Si la creación fue exitosa, proceder con la acción específica
+          if (tasks.enviarMensaje) {
+            await sendMessages(campaignId); 
+            // sendMessages ahora debería manejar el avance a step 4 o mostrar error
+          } else if (tasks.seguir) {
+            await followAllUsers(campaignId);
+            // followAllUsers ahora debería manejar el avance a step 4 o mostrar error
+          } else {
+            // Si no hay acción específica (ej. solo likes/comments), avanzar directamente
+            setStep(4);
+            setLoading(false); // Ensure loading is false if we transition here
+          }
+        } else {
+           // createCampaign falló, el error ya está seteado, detener carga
+           setLoading(false);
+        }
+      } catch (err) {
+        // Catch cualquier error inesperado en el flujo de handleNext step 3
+        console.error("Error inesperado en handleNext (step 3):", err);
+        setError("Ocurrió un error inesperado al procesar la campaña.");
+        setLoading(false);
+      }
       
-      // Si todo va bien, avanzar al paso 4 (se hace en sendMessages o createCampaign)
+      // El setLoading(false) se maneja dentro de createCampaign, sendMessages, followAllUsers o aquí
     }
   };
   
@@ -875,74 +876,84 @@ const NuevaCampanaModal = ({ isOpen, onClose, user, instagramToken }) => {
       
       setLoading(true);
       
-      // Preparar los datos de la campaña
-      const campaignData = {
-        name: campaignName,
+      // Determinar el tipo de campaña basado en las tareas seleccionadas
+      let derivedCampaignType = 'unknown'; // Default or fallback type
+      if (tasks.enviarMensaje) {
+        derivedCampaignType = 'send_messages';
+      } else if (tasks.seguir) {
+        derivedCampaignType = 'follow_users';
+      } else if (tasks.comentar) {
+        derivedCampaignType = 'comment_posts'; // Assuming this task exists and corresponds to 'comment_posts'
+      } else if (tasks.darLikes) {
+        derivedCampaignType = 'like_posts'; // Assuming this task exists and corresponds to 'like_posts'
+      }
+      // Add more conditions if there are other task types like 'send_media' etc.
+
+      // Preparar los datos de la campaña COMPLETOS
+      const completeCampaignData = {
+        name: campaignName || `${derivedCampaignType} - ${new Date().toLocaleString()}`, // Ensure name exists
         targetLink,
         targetType,
         isProspecting,
         objectives,
         filters,
         tasks,
-        users,
-        message: mensaje,
+        campaignType: derivedCampaignType, 
+        targetUsers: users, // Ensure users are included for the store function
+        targetCount: users.length,
+        originalTargetCount: users.length,
+        message: mensaje, 
         templateId: selectedTemplate?.id || null,
-        createdAt: new Date(),
-        status: "processing", // processing, paused, completed, failed
-        progress: 0,
-        userId: user.uid
+        // Let campaignStore handle createdAt, status, progress, userId
+        // endpoint: ??? // Need to determine endpoint based on type?
       };
+
+      // *** Log ANTES de llamar al store ***
+      console.log("[Modal createCampaign] completeCampaignData before calling store:", JSON.stringify(completeCampaignData, null, 2));
+
+      // LLAMAR SIEMPRE a la función del store para crear la campaña
+      const campaignId = await createCampaign(user.uid, completeCampaignData); // Using imported createCampaign
+
+      if (!campaignId) {
+        throw new Error("No se pudo obtener el ID de la campaña creada desde el store.");
+      }
+
+      console.log("Campaña creada en store con ID:", campaignId);
       
-      // Si la tarea es enviar mensaje, ejecutar esa acción
-      if (tasks.enviarMensaje) {
-        await sendMessages();
-        // La función sendMessages se encarga de avanzar al paso 4 si tiene éxito
-      }
-      // Si la tarea es seguir usuarios, ejecutar esa acción
-      else if (tasks.seguir) {
-        await followAllUsers();
-        // Avanzar al paso 4
-        setStep(4);
-      }
-      // Para otras tareas o si no hay tareas específicas, solo guardar la campaña
-      else {
-        // Guardar en Firestore
-        const campaignsRef = collection(db, "users", user.uid, "campaigns");
-        const docRef = await addDoc(campaignsRef, campaignData);
-        
-        // Log de la acción
-        await logApiRequest({
-          endpoint: "internal/create_campaign",
-          requestData: campaignData,
-          userId: user.uid,
-          status: "success",
-          source: "NuevaCampanaModal",
-          metadata: {
-            action: "create_campaign",
-            campaignId: docRef.id,
-            campaignName
-          }
-        });
-        
-        // Avanzar al paso 4
-        setStep(4);
-      }
+      // Log de la acción (opcional aquí, ya que el store podría loguear)
+      await logApiRequest({
+        endpoint: "internal/create_campaign_in_store",
+        requestData: { userId: user.uid, campaignId: campaignId, type: derivedCampaignType },
+        userId: user.uid,
+        status: "success",
+        source: "NuevaCampanaModal",
+        metadata: {
+          action: "create_campaign_store_call",
+          campaignId: campaignId,
+          campaignName: completeCampaignData.name
+        }
+      });
+
+      // Devolver el ID para usarlo en las acciones siguientes
+      return campaignId; 
+      
     } catch (error) {
-      console.error("Error al crear la campaña:", error);
-      setError("Error al crear la campaña: " + error.message);
+      console.error("Error en la función createCampaign del modal:", error);
+      setError("Error al preparar o guardar la campaña: " + error.message);
       
       // Log del error
       await logApiRequest({
-        endpoint: "internal/create_campaign",
-        requestData: { campaignName },
+        endpoint: "internal/create_campaign_in_store",
+        requestData: { campaignName: campaignName, userId: user?.uid },
         userId: user?.uid,
         status: "error",
         source: "NuevaCampanaModal",
         metadata: {
-          action: "create_campaign",
+          action: "create_campaign_store_call",
           error: error.message
         }
       });
+      return null; // Indicar fallo
     } finally {
       setLoading(false);
     }
@@ -1192,7 +1203,7 @@ const NuevaCampanaModal = ({ isOpen, onClose, user, instagramToken }) => {
                 {tasks.seguir && (
                   <button 
                     className="w-full bg-black text-white rounded-full py-2 mt-2"
-                    onClick={followAllUsers}
+                    onClick={() => followAllUsers(campaignId)}
                     disabled={loading || users.length === 0}
                   >
                     {loading ? "Procesando..." : "Seguir a todos"}
@@ -1222,7 +1233,7 @@ const NuevaCampanaModal = ({ isOpen, onClose, user, instagramToken }) => {
                   
                   <button 
                     className="w-full bg-blue-600 text-white rounded-full py-2 mt-3"
-                    onClick={sendMessages}
+                    onClick={() => sendMessages(campaignId)}
                     disabled={loading || users.length === 0 || !mensaje.trim()}
                   >
                     {loading ? "Enviando..." : "Enviar mensajes"}

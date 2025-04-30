@@ -2,83 +2,87 @@ import React, { useState, useEffect } from 'react';
 import PropTypes from 'prop-types';
 // import { AreaChart, Area, XAxis, LineChart, Line, ResponsiveContainer, Tooltip } from 'recharts'; // Original line before commenting
 import { AreaChart, Area, XAxis, /* LineChart, Line, */ ResponsiveContainer, Tooltip } from 'recharts'; // Commented out LineChart, Line
-import { getActiveCampaigns } from '../campaignStore';
 import { getCampaignTypeName } from '../campaignIntegration';
 import { generateChartData, calculateCampaignProgress } from '../campaignSimulator';
 import { FaPlus, FaArrowRight } from 'react-icons/fa';
+import { db } from "../firebaseConfig";
+import { collection, query, where, orderBy, limit, onSnapshot } from "firebase/firestore";
 
 const HomeDashboard = ({ user, onCreateCampaign, navigateToCampaigns, isInstagramConnected, showNotification }) => {
   const [activeCampaign, setActiveCampaign] = useState(null);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [chartData, setChartData] = useState(null);
-  const [chartLoading, setChartLoading] = useState(false);
   const [chartError, setChartError] = useState(null);
 
-  // Efecto unificado para cargar datos de campaña y gráfico
   useEffect(() => {
-    let intervalId = null;
-    
-    const fetchCampaignData = async () => {
-      if (!user?.uid) return;
-      
-      try {
-        setLoading(true);
-        const campaigns = await getActiveCampaigns(user.uid);
-        
-        if (campaigns.length > 0) {
-          // Ordenar por fecha de creación
-          const sorted = campaigns.sort((a, b) => {
-            const dateA = a.createdAt instanceof Date ? a.createdAt : new Date(a.createdAt);
-            const dateB = b.createdAt instanceof Date ? b.createdAt : new Date(b.createdAt);
-            return dateB - dateA;
-          });
+    if (!user?.uid) {
+      setActiveCampaign(null);
+      setChartData(null);
+      setLoading(false);
+      return;
+    }
+
+    setLoading(true);
+    setChartError(null);
+    console.log("Setting up LATEST ACTIVE campaign listener for user:", user.uid);
+
+    const campaignsRef = collection(db, "users", user.uid, "campaigns");
+    const q = query(
+      campaignsRef, 
+      where("status", "==", "processing"), 
+      orderBy("createdAt", "desc"), 
+      limit(1)
+    );
+
+    const unsubscribe = onSnapshot(q, 
+      (snapshot) => {
+        if (snapshot.empty) {
+          console.log("Campaign listener update: No active campaigns found.");
+          setActiveCampaign(null);
+          setChartData(null);
+        } else {
+          const campaignDoc = snapshot.docs[0];
+          const campaignData = {
+            id: campaignDoc.id,
+            ...campaignDoc.data(),
+            createdAt: campaignDoc.data().createdAt?.toDate ? campaignDoc.data().createdAt.toDate() : null,
+            lastUpdated: campaignDoc.data().lastUpdated?.toDate ? campaignDoc.data().lastUpdated.toDate() : null,
+          };
+          console.log(`Campaign listener update: Active campaign found - ID: ${campaignData.id}`);
           
-          const campaign = sorted[0];
-          
-          // Calcular progreso inicial
-          const progress = calculateCampaignProgress(campaign);
-          
-          // Establecer campaña activa con datos de progreso
           setActiveCampaign({
-            ...campaign,
-            action: getCampaignTypeName(campaign.campaignType),
+            ...campaignData,
+            action: getCampaignTypeName(campaignData.campaignType),
             status: "Activa",
-            progress: progress.percentage,
-            targetCount: progress.total_users
           });
-          
-          // Generar datos del gráfico iniciales
-          const chartData = generateChartData(campaign);
-          setChartData(chartData);
-          
-          // Configurar actualización periódica (cada 10 segundos)
-          intervalId = setInterval(() => {
-            // Actualizar progreso de campaña
-            const updatedProgress = calculateCampaignProgress(campaign);
-            
-            setActiveCampaign(prev => ({
-              ...prev,
-              progress: updatedProgress.percentage
-            }));
-            
-            // Actualizar datos del gráfico
-            setChartData(generateChartData(campaign));
-          }, 10000);
+
+          try {
+             const generatedData = generateChartData(campaignData); 
+             setChartData(generatedData);
+             setChartError(null);
+          } catch(genError) {
+            console.error("Error generating chart data:", genError);
+            setChartError("Error al generar datos del gráfico.");
+            setChartData(null);
+          }
         }
-      } catch (error) {
-        console.error("Error al cargar campañas activas:", error);
-        setChartError("Error al cargar datos de la campaña");
-      } finally {
+        setLoading(false);
+      },
+      (error) => {
+        console.error("Error listening to active campaign changes:", error);
+        setChartError("Error al cargar datos de campaña.");
+        setActiveCampaign(null);
+        setChartData(null);
         setLoading(false);
       }
-    };
-    
-    fetchCampaignData();
-    
+    );
+
     return () => {
-      if (intervalId) clearInterval(intervalId);
+      console.log("Cleaning up LATEST ACTIVE campaign listener for user:", user.uid);
+      unsubscribe();
     };
-  }, [user]);
+
+  }, [user?.uid]);
 
   const handleVerTodoClick = () => {
     if (isInstagramConnected) {
@@ -89,7 +93,7 @@ const HomeDashboard = ({ user, onCreateCampaign, navigateToCampaigns, isInstagra
   };
 
   const renderLineChart = () => {
-    if (chartLoading) {
+    if (loading) {
       return (
         <div className="relative w-full h-64 mt-4 mb-2 bg-[#F8F7FF] rounded-lg flex items-center justify-center">
           <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-indigo-600"></div>
@@ -235,7 +239,7 @@ const HomeDashboard = ({ user, onCreateCampaign, navigateToCampaigns, isInstagra
                   {activeCampaign.status}
                 </span>
                 <span className="text-xs text-gray-500">
-                  {activeCampaign.progress}% completado
+                  {activeCampaign.targetCount > 0 ? Math.floor((activeCampaign.currentProgress / activeCampaign.targetCount) * 100) : 0}% completado
                 </span>
               </div>
             </div>

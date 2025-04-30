@@ -1,6 +1,6 @@
 import PropTypes from 'prop-types';
 import { useState } from 'react';
-import { doc, updateDoc, addDoc, collection } from "firebase/firestore";
+import { doc, updateDoc, addDoc, collection, deleteDoc } from "firebase/firestore";
 import { db } from "../firebaseConfig";
 import logApiRequest from "../requestLogger"; // Import the logger utility
 
@@ -24,6 +24,7 @@ const ModalEditarPlantilla = ({
     const [tipo, setTipo] = useState(isCreateMode ? (selectedType !== "Tipo" ? selectedType : "Plantillas de mensajes") : (template.type || "Plantillas de mensajes"));
     const [cuerpo, setCuerpo] = useState(isCreateMode ? body : (template.body || ""));
     const [isLoading, setIsLoading] = useState(false);
+    const [isDeleting, setIsDeleting] = useState(false);
     const [error, setError] = useState("");
     const [success, setSuccess] = useState("");
 
@@ -60,6 +61,7 @@ const ModalEditarPlantilla = ({
     
         try {
             setIsLoading(true);
+            setIsDeleting(false);
             setError("");
             
             // Solo para modo edición
@@ -150,6 +152,80 @@ const ModalEditarPlantilla = ({
                     }
                 });
             }
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    const handleDelete = async () => {
+        // Check if in edit mode and template data is valid
+        if (isCreateMode || !template || !template.id || !template.userId) {
+            setError("La eliminación solo está disponible para plantillas existentes.");
+            console.error("Error: Intento de eliminar en modo creación o con datos inválidos.", template);
+            return;
+        }
+
+        if (!window.confirm(`¿Estás seguro de que deseas eliminar la plantilla "${template.name}"? Esta acción no se puede deshacer.`)) {
+            return; // User cancelled
+        }
+
+        try {
+            setIsLoading(true);
+            setIsDeleting(true);
+            setError("");
+            setSuccess("");
+            
+            // Log the delete attempt
+            await logApiRequest({
+                endpoint: "internal/delete_template",
+                requestData: { templateId: template.id },
+                userId: template.userId,
+                status: "pending",
+                source: "ModalEditarPlantilla",
+                metadata: { action: "delete_template", templateId: template.id, templateName: template.name }
+            });
+            
+            const templateRef = doc(db, "users", template.userId, "templates", template.id);
+            await deleteDoc(templateRef);
+            
+            setSuccess("Plantilla eliminada con éxito");
+            
+            // Log the delete success
+            await logApiRequest({
+                endpoint: "internal/delete_template",
+                requestData: { templateId: template.id },
+                userId: template.userId,
+                status: "success",
+                source: "ModalEditarPlantilla",
+                metadata: { action: "delete_template", templateId: template.id, templateName: template.name }
+            });
+            
+            // Notificar al componente padre (si se proporciona la función)
+            if (onUpdate) {
+                onUpdate();
+            }
+            
+            // Cerrar el modal después de un breve retraso para mostrar el mensaje
+            setTimeout(() => {
+                onClose();
+            }, 1500);
+            
+        } catch (error) {
+            console.error("Error al eliminar la plantilla:", error);
+            setError(`Error al eliminar: ${error.message || "Algo salió mal"}`);
+            
+            // Log the delete error
+            await logApiRequest({
+                endpoint: "internal/delete_template",
+                requestData: { templateId: template.id },
+                userId: template.userId,
+                status: "error",
+                source: "ModalEditarPlantilla",
+                metadata: { action: "delete_template", templateId: template.id, templateName: template.name, error: error.message || "Unknown error" }
+            });
+        } finally {
+            setIsLoading(false);
+            setIsDeleting(false);
         }
     };
 
@@ -262,22 +338,43 @@ const ModalEditarPlantilla = ({
 
                 {/* Botones de formato */}
                 
-                {/* Botón Guardar (color ajustado) */}
-                <button
-                    className="mt-4 md:mt-6 w-full bg-[#0d0420] text-white py-2 md:py-3 rounded-lg font-semibold flex items-center justify-center gap-2 hover:bg-[#7c7c7c] transition text-sm md:text-base"
-                    onClick={handleSave}
-                    disabled={isLoading}
-                >
-                    {isLoading ? (
-                        <>
+                {/* Botones Guardar y Eliminar */}
+                <div className="mt-4 md:mt-6 flex flex-col md:flex-row gap-2 md:gap-3">
+                  <button
+                      className="w-full bg-[#0d0420] text-white py-2 md:py-3 rounded-lg font-semibold flex items-center justify-center gap-2 hover:bg-[#7c7c7c] transition text-sm md:text-base"
+                      onClick={handleSave}
+                      disabled={isLoading}
+                  >
+                      {/* Loading/Save text logic */}
+                       {isLoading && !isDeleting ? (
+                          <>
+                              <svg className="animate-spin -ml-1 mr-3 h-4 w-4 md:h-5 md:w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                              </svg>
+                              Guardando...
+                          </>
+                      ) : "Guardar →"}
+                  </button>
+                  
+                  {!isCreateMode && (
+                    <button
+                      className="w-full md:w-auto bg-red-600 text-white py-2 md:py-3 px-4 rounded-lg font-semibold flex items-center justify-center gap-2 hover:bg-red-700 transition text-sm md:text-base disabled:opacity-50 disabled:cursor-not-allowed"
+                      onClick={handleDelete}
+                      disabled={isLoading}
+                    >
+                      {isLoading && isDeleting ? (
+                         <>
                             <svg className="animate-spin -ml-1 mr-3 h-4 w-4 md:h-5 md:w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                                 <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                                 <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                             </svg>
-                            Guardando...
-                        </>
-                    ) : "Guardar →"}
-                </button>
+                            Eliminando...
+                         </>
+                      ) : "Eliminar"}
+                    </button>
+                  )}
+                </div>
             </div>
         </div>
     );
