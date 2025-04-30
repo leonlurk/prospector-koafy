@@ -36,9 +36,10 @@ const getMenuItems = (isInstagramConnected, toolContext) => {
     
     // --- IF SETTER CONTEXT IS ACTIVE --- 
     if (toolContext === 'setter') {
-        // Define the Herramientas dropdown separately
+        // Define the Herramientas dropdown separately (but we won't add it)
+        /* // Blocked Herramientas
         const herramientasDropdown = {
-            name: "Herramientas", // Keep the parent menu name
+            name: "Herramientas",
             icon: <FaTools className="md:w-5 md:h-6 text-white" />, 
             subItems: [
                 { name: "Prospector", label: "Prospector", icon: <FaHome className="md:w-5 md:h-6 text-white" /> }, 
@@ -46,22 +47,22 @@ const getMenuItems = (isInstagramConnected, toolContext) => {
                 { name: "Calendar", label: "Calendar", icon: <FaCalendarAlt className="md:w-5 md:h-6 text-white" /> } 
             ]
         };
+        */
 
         // Get the main Setter items (filter out bottom and commented items)
         const mainSetterItems = setterMenuItems.filter(item => 
-            !item.section && // Exclude bottom items
-            // Check if the item is NOT commented out (by checking its presence in the original array by name)
-            ["SetterConnections", "SetterAgents"].includes(item.name) // List only the *visible* main items here
+            !item.section && 
+            ["SetterConnections", "SetterAgents"].includes(item.name) 
         );
 
-        // Manually construct the desired order
+        // Manually construct the desired order (WITHOUT Herramientas)
         const combinedSetterMenu = [];
         const connectionsItem = mainSetterItems.find(item => item.name === "SetterConnections");
         const agentsItem = mainSetterItems.find(item => item.name === "SetterAgents");
 
         if (connectionsItem) combinedSetterMenu.push(connectionsItem);
         if (agentsItem) combinedSetterMenu.push(agentsItem);
-        combinedSetterMenu.push(herramientasDropdown); // Add Herramientas as the third item
+        // combinedSetterMenu.push(herramientasDropdown); // <-- Do not add Herramientas
 
         // Add any remaining mainSetterItems (if any were added back later)
         mainSetterItems.forEach(item => {
@@ -75,23 +76,25 @@ const getMenuItems = (isInstagramConnected, toolContext) => {
 
     // --- IF CALENDAR CONTEXT IS ACTIVE --- (Placeholder)
     if (toolContext === 'calendar') {
-        // Return Calendar specific items + Herramientas dropdown
+        // Return Calendar specific items + Herramientas dropdown (Blocked)
         return [
+            /* // Blocked Herramientas
             {
                 name: "Herramientas", 
                 icon: <FaTools className="md:w-5 md:h-6 text-white" />, 
-                subItems: [ /* ... same as above ... */ ]
+                subItems: [ /* ... subitems ... * / ]
             },
-            // Add Calendar items here...
+            */
             { name: "CalendarView", label: "Vista Calendario", icon: <FaCalendarAlt className="md:w-5 md:h-6 text-white" /> },
         ];
     }
 
     // --- DEFAULT CONTEXT (Prospector/Home) --- 
-    const prospectorMenuItems = [
+    let prospectorMenuItems = [
         { name: "Home", label: "Home", icon: "/assets/Home.png" },
         { name: "Plantillas", label: "Plantillas", icon: "/assets/device-message.png" },
-        // Herramientas dropdown definition
+        // Herramientas dropdown definition (commented out here too)
+        /* // Blocked Herramientas
         {
             name: "Herramientas",
             icon: <FaTools className="md:w-5 md:h-6 text-white" />, 
@@ -101,6 +104,7 @@ const getMenuItems = (isInstagramConnected, toolContext) => {
                 { name: "Calendar", label: "Calendar", icon: <FaCalendarAlt className="md:w-5 md:h-6 text-white" /> } 
             ]
         }
+        */
     ];
     
     if (isInstagramConnected) {
@@ -123,6 +127,9 @@ const getMenuItems = (isInstagramConnected, toolContext) => {
         );
     }
     
+    // Filter out Herramientas just in case (though already commented)
+    prospectorMenuItems = prospectorMenuItems.filter(item => item.name !== "Herramientas");
+
     return prospectorMenuItems;
 };
 

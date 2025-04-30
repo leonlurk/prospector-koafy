@@ -390,7 +390,7 @@ if (operationSuccessful) {
           <div className="flex justify-between items-center mb-4">
             <button
               onClick={() => setIsCreatingNew(true)}
-              className="text-white hover:bg-white hover:text-black hover:border-[#232323] flex items-center"
+              className="text-black hover:bg-white border border-[#232323] hover:text-black hover:border-[#232323] flex items-center"
             >
               <FaPlus size={12} className="mr-1" /> Crear nueva lista
             </button>

@@ -17,7 +17,7 @@ import NuevaCampanaModal from "./components/NuevaCampanaModal";
 import { updateCampaign } from "./campaignStore";
 import { instagramApi } from "./instagramApi";
 import logApiRequest from "./requestLogger";
-import { getLatestProcessingCampaign, getOldestScheduledCampaign, activateCampaign } from "./campaignStore";
+import { getLatestProcessingCampaign, getOldestScheduledCampaign, activateCampaign, checkAndActivateNextScheduled } from "./campaignStore";
 
 // --- Import Setter AI Pages --- 
 import SetterDashboardPage from "./features/setter-ai/pages/DashboardPage"; 
@@ -118,6 +118,7 @@ const Dashboard = () => {
   const [campaignListVersion, setCampaignListVersion] = useState(0);
   const [allCampaigns, setAllCampaigns] = useState([]);
   const [isLoadingCampaigns, setIsLoadingCampaigns] = useState(true);
+  const [currentlyProcessingCampaignId, setCurrentlyProcessingCampaignId] = useState(null);
 
   // Determine the current tool context
   const currentToolContext = getToolContext(selectedOption);
@@ -301,19 +302,12 @@ const Dashboard = () => {
         setIsLoading(true);
         fetchTemplates(currentUser.uid);
   
-        // Check for saved option from localStorage FIRST
-        const savedOption = localStorage.getItem('lastSelectedOption');
-        let initialOption = null;
-        if (savedOption) {
-            // Optional: Add validation here if needed (e.g., ensure savedOption is valid)
-            initialOption = savedOption;
-            console.log("Restoring selected option from localStorage:", savedOption);
-        }
+        let finalSelectedOption = null; // Variable to hold the final decision
   
         try {
-          // Obtener sesión de Instagram desde Firebase
           const instagramSession = await getInstagramSession(currentUser.uid);
-          
+          let sessionValid = false;
+  
           if (instagramSession && instagramSession.token) {
             // Restaurar localStorage desde Firebase (para compatibilidad)
             if (instagramSession.token) {
@@ -337,43 +331,58 @@ const Dashboard = () => {
             }
             
             // Verificar que la sesión sigue siendo válida
-            const sessionValid = await checkInstagramSession(instagramSession.token);
+            sessionValid = await checkInstagramSession(instagramSession.token);
             setIsInstagramConnected(sessionValid);
   
             if (sessionValid) {
               setInstagramToken(instagramSession.token);
-              // Set default option ONLY if no saved option was found
-              if (!initialOption) {
-                  initialOption = "Home"; 
-                  console.log("Setting initial option to Home (session valid, no saved option).");
-              }
             } else {
-              // La sesión expiró, limpiar datos
               await clearInstagramSession(currentUser.uid);
-              // Set default option ONLY if no saved option was found
-              if (!initialOption) {
-                  initialOption = "Conectar Instagram";
-                  console.log("Setting initial option to Conectar Instagram (session invalid, no saved option).");
-              }
             }
           } else {
              // No Instagram session found
-             // Set default option ONLY if no saved option was found
-             if (!initialOption) {
-                 initialOption = "Conectar Instagram";
-                 console.log("Setting initial option to Conectar Instagram (no session found, no saved option).");
-             }
+             setIsInstagramConnected(false);
+             sessionValid = false;
           }
+  
+          // --- PRIORITY CHECK: Instagram Connection --- 
+          if (!sessionValid) {
+            // If NOT connected, force the Connect Instagram page
+            finalSelectedOption = "Conectar Instagram";
+            console.log("Setting initial option to Conectar Instagram (Session invalid/missing - PRIORITY).");
+            // Clear any potentially invalid last option from localStorage
+            localStorage.removeItem('lastSelectedOption'); 
+          } else {
+            // If connected, THEN try to restore from localStorage
+            const savedOption = localStorage.getItem('lastSelectedOption');
+            if (savedOption) {
+              // Optional: Validate savedOption is still valid
+              finalSelectedOption = savedOption;
+              console.log("Restoring selected option from localStorage:", savedOption);
+            } else {
+              // If connected and no saved option, default to Home
+              finalSelectedOption = "Home";
+              console.log("Setting initial option to Home (Session valid, no saved option).");
+            }
+          }
+  
         } catch (error) {
-          console.error("Error al recuperar sesión de Instagram:", error);
-          // Set default option ONLY if no saved option was found
-          if (!initialOption) {
-              initialOption = "Conectar Instagram";
-              console.log("Setting initial option to Conectar Instagram (error loading session, no saved option).");
-          }
+          console.error("Error during initial setup:", error);
+          setIsInstagramConnected(false);
+          // On error, default to Connect Instagram page as a safe fallback
+          finalSelectedOption = "Conectar Instagram";
+          console.log("Setting initial option to Conectar Instagram (Error during setup - PRIORITY).");
+          localStorage.removeItem('lastSelectedOption'); 
         } finally {
-          // Set the selected option state AFTER all checks
-          setSelectedOption(initialOption || "Home"); // Fallback to Home just in case
+          // Set the determined option, fallback to Home ONLY if finalSelectedOption is somehow null
+          const optionToSet = finalSelectedOption || "Home";
+          setSelectedOption(optionToSet);
+          
+          // Update localStorage only if the session is valid and we are setting a non-connect option
+          if (sessionValid && optionToSet !== "Conectar Instagram") {
+              localStorage.setItem('lastSelectedOption', optionToSet);
+          } 
+          
           setIsLoading(false);
         }
       }
@@ -391,72 +400,97 @@ const Dashboard = () => {
       unsubscribe();
       window.removeEventListener("resize", handleResize);
     };
-  }, [navigate, fetchTemplates, checkInstagramSession]);
+  }, [navigate, fetchTemplates]);
 
-  // --- Lógica de Polling para Campañas Programadas (Lógica de Cola Estricta) ---
+  // --- Lógica de Polling para Campañas Programadas (MEJORADA) ---
   useEffect(() => {
     if (!user?.uid) return;
 
-    console.log("Iniciando intervalo de verificación de cola de campañas...");
+    console.log("[Queue Check] Iniciando intervalo de verificación...");
     const intervalId = setInterval(async () => {
       if (processingScheduled) {
-        console.log("Polling Fallback: Procesamiento anterior en curso.");
+        console.log("[Queue Check] Procesamiento anterior en curso, omitiendo ciclo.");
         return; 
       }
 
-      console.log("Polling Fallback: Verificando cola...");
+      console.log("[Queue Check] Verificando cola...");
       setProcessingScheduled(true);
 
       try {
-        // 1. ¿Hay alguna campaña activa?
-        const currentActive = await getLatestProcessingCampaign(user.uid);
-        
-        if (!currentActive) {
-          // 2. No hay activa. ¿Hay alguna programada esperando?
-          console.log("Polling Fallback: No hay campañas activas. Buscando programadas...");
+        const activeNow = await getLatestProcessingCampaign(user.uid);
+        const activeNowId = activeNow?.id || null;
+
+        // --- Logica Mejorada --- 
+        if (activeNowId) {
+          // Hay una campaña activa AHORA
+          if (activeNowId !== currentlyProcessingCampaignId) {
+            console.log(`[Queue Check] Campaña activa detectada/cambiada: ${activeNowId}`);
+            setCurrentlyProcessingCampaignId(activeNowId); // Track it
+          }
+           // Else: La misma campaña sigue activa, no hacer nada extra aquí
+           
+        } else if (!activeNowId && currentlyProcessingCampaignId) {
+          // NO hay campaña activa AHORA, PERO *HABÍA UNA* antes
+          console.log(`[Queue Check] Campaña ${currentlyProcessingCampaignId} parece haber terminado. Buscando siguiente en cola...`);
+          setCurrentlyProcessingCampaignId(null); // Clear tracking
+          triggerCampaignsRefresh(); // Refresh the list panel
+          
+          // Immediately try to activate the next scheduled one
+          const activatedNext = await checkAndActivateNextScheduled(user.uid); // Use the helper function
+          if (activatedNext) {
+             console.log(`[Queue Check] Siguiente campaña (${activatedNext.id}) activada inmediatamente.`);
+             setCurrentlyProcessingCampaignId(activatedNext.id); // Start tracking the new one
+             showNotificationFunc(`Siguiente campaña '${activatedNext.name || activatedNext.id}' iniciada.`, "success");
+             triggerCampaignsRefresh(); // Refresh list again to show the new active one
+          } else {
+             console.log("[Queue Check] No se encontró o no se pudo activar una campaña en cola.");
+          }
+          
+        } else if (!activeNowId && !currentlyProcessingCampaignId) {
+          // NO hay campaña activa AHORA y NO HABÍA UNA antes
+          // This case might be redundant if checkAndActivateNextScheduled covers it, but keep for clarity
+          console.log("[Queue Check] No hay campaña activa. Verificando si hay alguna programada...");
           const nextCampaign = await getOldestScheduledCampaign(user.uid);
-
           if (nextCampaign) {
-            // 3. ¡Sí hay! Intentar activarla.
-            console.log(`Polling Fallback: Activando campaña programada ${nextCampaign.id}`);
+            console.log(`[Queue Check] Encontrada campaña programada ${nextCampaign.id}. Intentando activar...`);
             const session = await getInstagramSession(user.uid);
-            const currentInstagramToken = session?.token;
-
-            if (!currentInstagramToken) {
-              console.error("Polling Fallback: No se pudo obtener token para activar campaña.");
-              showNotificationFunc("Error: No se pudo obtener token para activar campaña en cola.", "error");
+            const token = session?.token;
+            if (token) {
+              const activated = await activateCampaign(user.uid, nextCampaign, token);
+              if (activated) {
+                console.log(`[Queue Check] Campaña programada ${nextCampaign.id} activada.`);
+                setCurrentlyProcessingCampaignId(nextCampaign.id);
+                showNotificationFunc(`Campaña en cola '${nextCampaign.name}' iniciada.`, "success");
+                triggerCampaignsRefresh();
+              } else {
+                 showNotificationFunc(`Error al iniciar campaña en cola '${nextCampaign.name}'.`, "error");
+                 triggerCampaignsRefresh(); // Refresh even on failure
+              }
             } else {
-               // Llamar a activateCampaign (que maneja errores internos y logs)
-               const activated = await activateCampaign(user.uid, nextCampaign, currentInstagramToken);
-               if (activated) {
-                   showNotificationFunc(`Campaña en cola '${nextCampaign.name}' iniciada.`, "success");
-                   triggerCampaignsRefresh();
-                   // Podríamos querer refrescar la lista de campañas aquí
-               } else {
-                    // activateCampaign ya maneja el log y el cambio a status: failed
-                    showNotificationFunc(`Error al iniciar campaña en cola '${nextCampaign.name}'.`, "error");
-               }
+              showNotificationFunc("Error: No se pudo obtener token para activar campaña en cola.", "error");
             }
           } else {
-             console.log("Polling Fallback: No hay campañas programadas esperando.");
+             console.log("[Queue Check] No hay campañas programadas esperando.");
           }
-        } else {
-            console.log(`Polling Fallback: Campaña ${currentActive.id} sigue activa.`);
         }
+        // --- Fin Logica Mejorada ---
 
       } catch (error) {
-        console.error("Polling Fallback: Error general al verificar/procesar cola:", error);
+        console.error("[Queue Check] Error general al verificar/procesar cola:", error);
+        // Potentially clear tracking ID on error?
+        // setCurrentlyProcessingCampaignId(null); 
       } finally {
         setProcessingScheduled(false);
-        console.log("Polling Fallback: Ciclo completado.");
+        console.log("[Queue Check] Ciclo completado.");
       }
-    }, 60000); // Verificar cada 60 segundos (puede ajustarse)
+    }, 30000); // Reducir intervalo a 30 segundos para reacción más rápida?
 
     return () => {
-      console.log("Limpiando intervalo de verificación de cola.");
+      console.log("[Queue Check] Limpiando intervalo de verificación.");
       clearInterval(intervalId);
     };
-  }, [user, processingScheduled]); // Dependencias
+  // Dependencies: Add currentlyProcessingCampaignId if state updates within loop affect next run
+  }, [user, processingScheduled, currentlyProcessingCampaignId]); 
 
   // --- useEffect for Real-time Campaign Listener --- 
   useEffect(() => {
