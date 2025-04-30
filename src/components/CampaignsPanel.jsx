@@ -6,7 +6,7 @@ import { collection, query, orderBy, onSnapshot } from "firebase/firestore";
 import logApiRequest from "../requestLogger";
 import CampaignDetailsModal from "./CampaignDetailsModal";
 import { calculateCampaignProgress } from "../campaignSimulator";
-import { FaPause, FaPlay, FaTrash } from 'react-icons/fa';
+import { FaPause, FaPlay, FaTimes } from 'react-icons/fa';
 
 const CampaignsPanel = ({ user, onRefreshStats, onCreateCampaign, refreshTrigger, showNotificationFunc }) => {
   const [campaigns, setCampaigns] = useState([]);
@@ -188,18 +188,17 @@ const CampaignsPanel = ({ user, onRefreshStats, onCreateCampaign, refreshTrigger
     // Check if backendQueueId exists before proceeding
     if (!backendQueueId) {
       console.error("handlePauseCampaign: Falta backendQueueId para manejar la campaña", campaign);
-      alert("Error interno: No se encontró el ID necesario para pausar esta campaña.");
+      showNotificationFunc("Error interno: No se encontró el ID necesario para pausar esta campaña.", "error");
       return;
     }
 
-    if (!window.confirm('¿Estás seguro de pausar esta campaña?')) return;
     try {
       // --- Get JWT Auth Token ---
       const jwtToken = localStorage.getItem('instagram_bot_token');
       console.log(`handlePauseCampaign: Retrieved token from localStorage. Type: ${typeof jwtToken}, Length: ${jwtToken?.length}, StartsWith: ${jwtToken?.substring(0, 10)}`); // More detailed log
       if (!jwtToken) {
         console.error("Cannot pause campaign: User not authenticated.");
-        alert("Error de autenticación. Por favor, inicia sesión de nuevo.");
+        showNotificationFunc("Error de autenticación. Por favor, inicia sesión de nuevo.", "error");
         return;
       }
       // --- End JWT Auth Token ---
@@ -220,7 +219,6 @@ const CampaignsPanel = ({ user, onRefreshStats, onCreateCampaign, refreshTrigger
           endpoint: "internal/pause_campaign", requestData: { campaignId }, userId: user.uid,
           status: "success", source: "CampaignsPanel", metadata: { action: "pause_campaign" }
         });
-        alert("Campaña pausada");
       } else {
         console.error(`Error al pausar ${campaignId}`);
         // Loggear error (opcional)
@@ -232,7 +230,7 @@ const CampaignsPanel = ({ user, onRefreshStats, onCreateCampaign, refreshTrigger
       }
     } catch (error) {
       console.error("Error al pausar campaña:", error);
-      alert(`Error al pausar campaña: ${error.message}`);
+      showNotificationFunc(`Error al pausar campaña: ${error.message}`, "error");
     }
   };
 
@@ -249,7 +247,6 @@ const CampaignsPanel = ({ user, onRefreshStats, onCreateCampaign, refreshTrigger
       return;
     }
 
-    if (!window.confirm('¿Estás seguro de reanudar esta campaña?')) return;
     try {
       // --- Get JWT Auth Token ---
       const jwtToken = localStorage.getItem('instagram_bot_token');
@@ -305,7 +302,6 @@ const CampaignsPanel = ({ user, onRefreshStats, onCreateCampaign, refreshTrigger
       return;
     }
 
-    if (!window.confirm('¿Estás seguro de cancelar esta campaña?')) return;
     try {
       // --- Get JWT Auth Token ---
       const jwtToken = localStorage.getItem('instagram_bot_token');
@@ -644,7 +640,7 @@ const CampaignsPanel = ({ user, onRefreshStats, onCreateCampaign, refreshTrigger
                          title="Cancelar Campaña"
                          disabled={!campaign.initialResponse?.queue_id && campaign.status !== 'scheduled'} // <-- Disable if no queue_id (allow cancel for scheduled)
                        >
-                         <FaTrash size={14} />
+                         <FaTimes size={14} />
                        </button>
                      )}
                      {/* Botón de borrado (opcional, mantener si se usa) */}

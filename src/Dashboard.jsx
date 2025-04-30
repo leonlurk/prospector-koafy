@@ -8,6 +8,7 @@ import ChartComponent from "./components/ChartComponent";
 import ConnectInstagram from "./components/ConnectInstagram";
 import ModalEditarPlantilla from "./components/ModalEditarPlantilla";
 import WhitelistPanel from "./components/WhitelistPanel";
+import BlacklistDashboard from "./components/BlacklistDashboard";
 import { checkBlacklistedUsers } from "./blacklistUtils";
 import { getInstagramSession, clearInstagramSession } from "./instagramSessionUtils";
 import CampaignsPanel from "./components/CampaignsPanel";
@@ -646,8 +647,8 @@ const Dashboard = () => {
                      refreshTrigger={campaignListVersion}
                      showNotificationFunc={showNotificationFunc} // <-- Pass the function down
                     />;
-        case 'Blacklist': // Manejado abajo por optionType? Revisar si hay duplicado
-            return <SetterBlackListPage />;
+        case 'Blacklist': 
+            return <BlacklistDashboard user={user} />;
         case 'Whitelist':
       return <WhitelistPanel user={user} />;
         case 'Conectar Instagram':
@@ -768,8 +769,6 @@ const Dashboard = () => {
             return <SetterDashboardPage user={user} setSelectedOption={setSelectedOption}/>;
         case 'SetterConnections':
       return <SetterConnectionsPage />;
-        case 'SetterBlacklist': // ¿Conflicto con 'Blacklist' arriba? Usar solo uno.
-            return <SetterBlackListPage />;
         case 'SetterActionFlow':
              return <div>Página Action Flow (Requiere Agente)</div>;
         case 'SetterAgents': 
