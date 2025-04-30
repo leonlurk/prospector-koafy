@@ -265,29 +265,39 @@ export const getOldestScheduledCampaign = async (userId) => {
  * @returns {Promise<boolean>} - true si la activación fue exitosa (API llamada), false si hubo error.
  */
 export const activateCampaign = async (userId, campaign, instagramToken) => {
+  // --- LOGGING: Function Entry --- 
+  console.log(`[activateCampaign ENTRY] Attempting to activate campaign. ID: ${campaign?.id}, Type: ${campaign?.campaignType}`);
+  console.log(`[activateCampaign ENTRY] Received Campaign Data:`, JSON.stringify(campaign, null, 2));
+  console.log(`[activateCampaign ENTRY] Received Instagram Token Present: ${!!instagramToken}`);
+  // --- END LOGGING ---
+  
   if (!campaign || !campaign.id || !campaign.campaignType) { 
-    console.error("activateCampaign: Datos de campaña inválidos (check id, campaignType).", campaign);
+    console.error("[activateCampaign VALIDATION] Datos de campaña inválidos (check id, campaignType).", campaign);
     return false;
   }
-  console.log(`Activando campaña ${campaign.id} (${campaign.campaignType})`);
+  // console.log(`Activando campaña ${campaign.id} (${campaign.campaignType})`); // Redundant with entry log
 
   try {
-    // 1. Marcar como 'processing'
+    // --- LOGGING: Status Update --- 
+    console.log(`[activateCampaign ${campaign.id}] Attempting to update status to 'processing' in Firestore...`);
+    // --- END LOGGING ---
     await updateDoc(doc(db, "users", userId, "campaigns", campaign.id), { 
       status: 'processing', 
       lastUpdated: new Date()
-      // Podríamos añadir un campo 'startedAt': new Date() si es útil
     });
-    console.log(`Campaña ${campaign.id} marcada como 'processing'.`);
+    console.log(`[activateCampaign ${campaign.id}] Status updated to 'processing' successfully.`);
 
     // 2. Ejecutar la acción de la API
     let apiResponse = null;
-    const usersToProcess = campaign.targetUsers || [];
-    if (usersToProcess.length === 0 && campaign.campaignType !== 'some_task_without_users') { // Añadir excepciones si aplica
+    const usersToProcess = campaign.targetUsers || campaign.targetUserList || []; // Use targetUserList as fallback
+    console.log(`[activateCampaign ${campaign.id}] usersToProcess length: ${usersToProcess.length}`);
+    if (usersToProcess.length === 0 && campaign.campaignType !== 'some_task_without_users') { 
+       console.error(`[activateCampaign ${campaign.id}] ERROR: User list (targetUsers/targetUserList) is empty.`);
        throw new Error("No users found in target list during activation.");
     }
 
     // Loggear inicio de la acción
+    console.log(`[activateCampaign ${campaign.id}] Logging API request pending...`);
      await logApiRequest({
         endpoint: `/activate_campaign/${campaign.campaignType}`,
         requestData: { campaignId: campaign.id, userCount: usersToProcess.length },
@@ -295,29 +305,46 @@ export const activateCampaign = async (userId, campaign, instagramToken) => {
         metadata: { action: `start_${campaign.campaignType}`, campaignId: campaign.id }
     });
 
+    console.log(`[activateCampaign ${campaign.id}] Entering SWITCH statement for campaignType: ${campaign.campaignType}`);
     switch (campaign.campaignType) {
       case 'send_messages':
-        // Refined check for message content
-        const messageContent = campaign.message || campaign.messageTemplate; // Prefer message if it exists
-        console.log(`[activateCampaign] Trying to send message. Content found:`, !!messageContent, `(Value: ${messageContent ? messageContent.substring(0,30)+'...' : 'N/A'})`);
+        console.log(`[activateCampaign ${campaign.id}] Entered 'send_messages' case.`);
+        const messageContent = campaign.message || campaign.messageTemplate;
         
-        if (!messageContent) { 
-          console.error("[activateCampaign] Message content is definitively missing:", campaign);
-          throw new Error("Contenido del mensaje (message o messageTemplate) no encontrado para activar campaña.");
-        }
+        // --- Add Detailed Logging HERE ---
+        console.log(`[activateCampaign ${campaign.id}] Preparing 'send_messages'.`);
+        console.log(`[activateCampaign ${campaign.id}]   Users Count: ${usersToProcess.length}`);
+        console.log(`[activateCampaign ${campaign.id}]   Message Content Present: ${!!messageContent}`);
+        console.log(`[activateCampaign ${campaign.id}]   Message Content Snippet: ${messageContent ? messageContent.substring(0, 50) + '...' : 'N/A'}`);
+        console.log(`[activateCampaign ${campaign.id}]   Token Present: ${!!instagramToken}`);
+        // --- End Logging ---
 
-        // *** THE API CALL ITSELF ***
-        console.log(`---> Calling instagramApi.sendMessages with ${usersToProcess.length} users for campaign ${campaign.id}. Token provided: ${!!instagramToken}`);
+        if (!messageContent) { 
+          console.error(`[activateCampaign ${campaign.id}] ERROR: Message content (message/messageTemplate) is missing:`, campaign);
+          throw new Error("Contenido del mensaje no encontrado para activar campaña.");
+        }
+        // Removed redundant usersToProcess empty check here, handled above
+
+        console.log(`--->>> [activateCampaign ${campaign.id}] EXECUTING instagramApi.sendMessages NOW...`);
         try {
             apiResponse = await instagramApi.sendMessages(usersToProcess, messageContent, false, instagramToken);
-            console.log(`---> instagramApi.sendMessages response for ${campaign.id}:`, apiResponse); 
+            console.log(`--->>> [activateCampaign ${campaign.id}] FINISHED instagramApi.sendMessages.`); 
         } catch (apiError) {
-             console.error(`---> Error DIRECTLY from instagramApi.sendMessages for ${campaign.id}:`, apiError);
-             throw apiError; // Re-throw the specific API error
+             console.error(`--->>> [activateCampaign ${campaign.id}] CAUGHT ERROR during instagramApi.sendMessages:`, apiError);
+             throw apiError; // Re-throw
         }
         break;
       case 'follow_users':
-        apiResponse = await instagramApi.followUsers(usersToProcess, instagramToken);
+        // Add similar detailed logging if needed for other types
+        console.log(`[activateCampaign ${campaign.id}] Preparing 'follow_users'. Users: ${usersToProcess.length}, Token: ${!!instagramToken}`);
+        console.log(`--->>> [activateCampaign ${campaign.id}] EXECUTING instagramApi.followUsers NOW...`);
+        try {
+           apiResponse = await instagramApi.followUsers(usersToProcess, instagramToken);
+           console.log(`--->>> [activateCampaign ${campaign.id}] FINISHED instagramApi.followUsers.`);
+        } catch (apiError) {
+           console.error(`--->>> [activateCampaign ${campaign.id}] CAUGHT ERROR during instagramApi.followUsers:`, apiError);
+           throw apiError; 
+        } 
         break;
       case 'like_posts':
         console.warn("Activando campaña de likes (backend debería manejar el bucle)");
@@ -339,18 +366,30 @@ export const activateCampaign = async (userId, campaign, instagramToken) => {
         apiResponse = { status: 'success', message: 'Media campaign activation simulated' };
         break;
       default:
+        console.error(`[activateCampaign ${campaign.id}] ERROR: Unknown campaignType: ${campaign.campaignType}`);
         throw new Error(`Tipo de tarea desconocido al activar: ${campaign.campaignType}`);
     }
     
-    console.log(`API para campaña ${campaign.id} ejecutada tras activación, respuesta:`, apiResponse?.status);
+    // --- LOGGING: API Response --- 
+    console.log(`[activateCampaign ${campaign.id}] API call executed. Response received:`, JSON.stringify(apiResponse));
+    // --- END LOGGING ---
     
-    // Actualizar con respuesta inicial (si aplica)
-    await updateDoc(doc(db, "users", userId, "campaigns", campaign.id), { 
-       initialResponse: apiResponse,
-       lastUpdated: new Date()
-    });
+    // --- LOGGING: Firestore Update (Initial Response) --- 
+    console.log(`[activateCampaign ${campaign.id}] Attempting to update Firestore with initialResponse:`, JSON.stringify(apiResponse));
+    // --- END LOGGING ---
+    try {
+       await updateDoc(doc(db, "users", userId, "campaigns", campaign.id), { 
+         initialResponse: apiResponse, // Store the raw response
+         lastUpdated: new Date()
+       });
+       console.log(`[activateCampaign ${campaign.id}] Successfully updated Firestore with initialResponse.`);
+    } catch (updateError) {
+        console.error(`[activateCampaign ${campaign.id}] FAILED to update Firestore with initialResponse:`, updateError);
+        // Consider if this failure should mark the campaign as failed immediately
+    }
 
-     // Loggear éxito
+     // Loggear éxito general
+     console.log(`[activateCampaign ${campaign.id}] Logging API request success/completed...`);
      await logApiRequest({
         endpoint: `/activate_campaign/${campaign.campaignType}`,
         requestData: { campaignId: campaign.id }, userId: userId, responseData: apiResponse, 
@@ -358,62 +397,119 @@ export const activateCampaign = async (userId, campaign, instagramToken) => {
         metadata: { action: `activated_${campaign.campaignType}`, campaignId: campaign.id, apiStatus: apiResponse?.status }
     });
 
-    return true;
+    console.log(`[activateCampaign ${campaign.id}] Activation process completed successfully.`);
+    return true; // Activation succeeded
 
   } catch (error) {
-    console.error(`Error al activar campaña ${campaign.id}:`, error);
+    // --- LOGGING: Main Catch Block --- 
+    console.error(`[activateCampaign ${campaign.id}] CAUGHT ERROR in main try block:`, error);
+    console.error(`[activateCampaign ${campaign.id}] Error details:`, error.message, error.stack);
+    // --- END LOGGING ---
+    
     // Marcar como fallida si la activación falló
     try {
+      console.log(`[activateCampaign ${campaign.id}] Attempting to update status to 'failed' due to error...`);
       await updateDoc(doc(db, "users", userId, "campaigns", campaign.id), { 
         status: 'failed', 
         error: `Error on activation: ${error.message}`,
         endedAt: new Date(),
         lastUpdated: new Date()
       });
-      await logApiRequest({ // Loggear el fallo
-          endpoint: `/activate_campaign/${campaign.campaignType}`,
-          requestData: { campaignId: campaign.id }, userId: userId, status: 'error',
-          source: 'activateCampaign', 
-          metadata: { action: `failed_activation_${campaign.campaignType}`, campaignId: campaign.id, error: error.message }
-      });
+      console.log(`[activateCampaign ${campaign.id}] Status updated to 'failed'.`);
+      // Log the failure
+      await logApiRequest({
+        endpoint: `/activate_campaign/${campaign.campaignType}`,
+        requestData: { campaignId: campaign.id }, userId: userId, status: 'error',
+        source: 'activateCampaign', 
+        metadata: { action: `failed_activation_${campaign.campaignType}`, campaignId: campaign.id, error: error.message }
+    });
     } catch (updateError) {
-      console.error(`Error al marcar campaña ${campaign.id} como fallida tras error de activación:`, updateError);
+      console.error(`[activateCampaign ${campaign.id}] FAILED to update status to 'failed' after catching error:`, updateError);
     }
-    return false;
+    return false; // Activation failed
   }
 };
 
 /**
- * Revisa si hay campañas programadas y activa la siguiente si no hay ninguna activa.
- * @param {string} userId 
- * @param {string} instagramToken 
- * @returns {Promise<boolean>} - true si una campaña fue activada, false en caso contrario.
+ * Verifica si hay una campaña programada y, si no hay ninguna activa, la activa.
+ * Intenta obtener el token de Instagram desde Firebase.
+ * @param {string} userId - ID del usuario.
+ * @returns {Promise<Object|null>} - La campaña activada o null.
  */
-export const checkAndActivateNextScheduled = async (userId, instagramToken) => {
-  console.log("checkAndActivateNextScheduled: Verificando...");
-  if (!userId || !instagramToken) {
-    console.log("checkAndActivateNextScheduled: Falta userId o instagramToken.");
-    return false;
+export const checkAndActivateNextScheduled = async (userId) => {
+  // --- LOGGING: Function Entry ---
+  console.log(`[checkAndActivateNextScheduled ENTRY] Verifying queue for user: ${userId}`);
+  // --- END LOGGING ---
+
+  if (!userId) {
+    console.error("[checkAndActivateNextScheduled] ERROR: Missing userId.");
+    return null; 
   }
 
-  // 1. ¿Hay alguna campaña ya activa?
-  const currentActive = await getLatestProcessingCampaign(userId);
-  if (currentActive) {
-    console.log(`checkAndActivateNextScheduled: Ya hay una campaña activa (${currentActive.id}). No se activa nada.`);
-    return false; // Ya hay una activa, no hacemos nada
-  }
+  try {
+    // --- LOGGING: Checking for active campaign ---
+    console.log("[checkAndActivateNextScheduled] Checking for currently active campaign...");
+    // --- END LOGGING ---
+    const activeCampaign = await getLatestProcessingCampaign(userId);
+    if (activeCampaign) {
+      // --- LOGGING: Active campaign found ---
+      console.log(`[checkAndActivateNextScheduled] Found active campaign: ${activeCampaign.id}. No action needed.`);
+      // --- END LOGGING ---
+      return null; // Hay una activa, no hacer nada
+    }
 
-  // 2. No hay activa, ¿hay alguna programada?
-  const nextCampaign = await getOldestScheduledCampaign(userId);
-  if (!nextCampaign) {
-    console.log("checkAndActivateNextScheduled: No hay campañas programadas esperando.");
-    return false; // No hay ninguna esperando
-  }
+    // --- LOGGING: No active campaign, checking for scheduled ---
+    console.log("[checkAndActivateNextScheduled] No active campaign found. Checking for oldest scheduled...");
+    // --- END LOGGING ---
+    const nextCampaign = await getOldestScheduledCampaign(userId);
+    if (!nextCampaign) {
+      // --- LOGGING: No scheduled campaign found ---
+      console.log("[checkAndActivateNextScheduled] No scheduled campaigns found.");
+      // --- END LOGGING ---
+      return null; // No hay ninguna programada
+    }
 
-  // 3. ¡Sí hay! Activarla.
-  console.log(`checkAndActivateNextScheduled: Activando la campaña programada ${nextCampaign.id}`);
-  const activated = await activateCampaign(userId, nextCampaign, instagramToken);
-  return activated;
+    // --- LOGGING: Scheduled campaign found, attempting activation ---
+    console.log(`[checkAndActivateNextScheduled] Found scheduled campaign: ${nextCampaign.id}. Attempting to activate...`);
+    console.log(`[checkAndActivateNextScheduled] Scheduled Campaign Data:`, JSON.stringify(nextCampaign, null, 2));
+    // --- END LOGGING ---
+
+    // --- LOGGING: Fetching Instagram Token --- 
+    console.log(`[checkAndActivateNextScheduled] Fetching Instagram token for user ${userId}...`);
+    const session = await getInstagramSession(userId);
+    const instagramToken = session?.token;
+    if (!instagramToken) {
+        console.error(`[checkAndActivateNextScheduled] ERROR: Could not retrieve Instagram token for user ${userId}. Cannot activate campaign ${nextCampaign.id}.`);
+        return null; // Cannot activate without token
+    }
+    console.log(`[checkAndActivateNextScheduled] Instagram token retrieved successfully.`);
+    // --- END LOGGING ---
+
+    // --- LOGGING: Calling activateCampaign --- 
+    console.log(`[checkAndActivateNextScheduled] Calling activateCampaign for ${nextCampaign.id}...`);
+    // --- END LOGGING ---
+    const activated = await activateCampaign(userId, nextCampaign, instagramToken);
+
+    if (activated) {
+      // --- LOGGING: Activation Successful --- 
+      console.log(`[checkAndActivateNextScheduled] Successfully activated campaign: ${nextCampaign.id}`);
+      // --- END LOGGING ---
+      return nextCampaign; // Devolver la campaña activada
+    } else {
+      // --- LOGGING: Activation Failed --- 
+      console.error(`[checkAndActivateNextScheduled] Failed to activate campaign ${nextCampaign.id}. activateCampaign returned false.`);
+      // --- END LOGGING ---
+      // Maybe update status to 'failed' here?
+      // await updateCampaign(userId, nextCampaign.id, { status: 'failed', error: 'Activation failed during checkAndActivateNextScheduled' });
+      return null;
+    }
+
+  } catch (error) {
+    // --- LOGGING: General Error --- 
+    console.error("[checkAndActivateNextScheduled] General error during execution:", error);
+    // --- END LOGGING ---
+    return null;
+  }
 };
 
 /**

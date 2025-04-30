@@ -8,7 +8,7 @@ import CampaignDetailsModal from "./CampaignDetailsModal";
 import { calculateCampaignProgress } from "../campaignSimulator";
 import { FaPause, FaPlay, FaTrash } from 'react-icons/fa';
 
-const CampaignsPanel = ({ user, onRefreshStats, onCreateCampaign, refreshTrigger }) => {
+const CampaignsPanel = ({ user, onRefreshStats, onCreateCampaign, refreshTrigger, showNotificationFunc }) => {
   const [campaigns, setCampaigns] = useState([]);
   const [loading, setLoading] = useState(true);
   const [dropdownState, setDropdownState] = useState({
@@ -245,7 +245,7 @@ const CampaignsPanel = ({ user, onRefreshStats, onCreateCampaign, refreshTrigger
 
     if (!backendQueueId) {
       console.error("handleResumeCampaign: Falta backendQueueId para manejar la campaña", campaign);
-      showNotification("Error interno: No se encontró el ID de la cola del backend.", "error");
+      showNotificationFunc("Error interno: No se encontró el ID de la cola del backend.", "error");
       return;
     }
 
@@ -256,7 +256,7 @@ const CampaignsPanel = ({ user, onRefreshStats, onCreateCampaign, refreshTrigger
       console.log(`handleResumeCampaign: Retrieved token from localStorage. Type: ${typeof jwtToken}, Length: ${jwtToken?.length}, StartsWith: ${jwtToken?.substring(0, 10)}`); // More detailed log
       if (!jwtToken) {
         console.error("Cannot resume campaign: User not authenticated.");
-        showNotification("Error de autenticación. Por favor, inicia sesión de nuevo.", "error");
+        showNotificationFunc("Error de autenticación. Por favor, inicia sesión de nuevo.", "error");
         return;
       }
       // --- End JWT Auth Token ---
@@ -277,7 +277,7 @@ const CampaignsPanel = ({ user, onRefreshStats, onCreateCampaign, refreshTrigger
           endpoint: "internal/resume_campaign", requestData: { campaignId }, userId: user.uid,
           status: "success", source: "CampaignsPanel", metadata: { action: "resume_campaign" }
         });
-        showNotification("Campaña reanudada/encolada", "success");
+        showNotificationFunc("Campaña reanudada/encolada", "success");
       } else {
         console.error(`Error al reanudar ${campaignId}`);
         // Loggear error
@@ -288,7 +288,7 @@ const CampaignsPanel = ({ user, onRefreshStats, onCreateCampaign, refreshTrigger
       }
     } catch (error) {
       console.error("Error al reanudar campaña:", error);
-      showNotification(`Error al reanudar campaña: ${error.message}`, "error"); // Show error message
+      showNotificationFunc(`Error al reanudar campaña: ${error.message}`, "error"); // Show error message
     }
   };
 
@@ -301,7 +301,7 @@ const CampaignsPanel = ({ user, onRefreshStats, onCreateCampaign, refreshTrigger
 
     if (!backendQueueId) {
       console.error("handleCancelCampaign: Falta backendQueueId para manejar la campaña", campaign);
-      showNotification("Error interno: No se encontró el ID de la cola del backend.", "error");
+      showNotificationFunc("Error interno: No se encontró el ID de la cola del backend.", "error");
       return;
     }
 
@@ -312,7 +312,7 @@ const CampaignsPanel = ({ user, onRefreshStats, onCreateCampaign, refreshTrigger
       console.log(`handleCancelCampaign: Retrieved token from localStorage. Type: ${typeof jwtToken}, Length: ${jwtToken?.length}, StartsWith: ${jwtToken?.substring(0, 10)}`); // More detailed log
       if (!jwtToken) {
         console.error("Cannot cancel campaign: User not authenticated.");
-        showNotification("Error de autenticación. Por favor, inicia sesión de nuevo.", "error");
+        showNotificationFunc("Error de autenticación. Por favor, inicia sesión de nuevo.", "error");
         return;
       }
       // --- End JWT Auth Token ---
@@ -343,7 +343,7 @@ const CampaignsPanel = ({ user, onRefreshStats, onCreateCampaign, refreshTrigger
       }
     } catch (error) {
       console.error("Error al cancelar campaña:", error);
-      showNotification(`Error al cancelar campaña: ${error.message}`, "error"); // Show error message
+      showNotificationFunc(`Error al cancelar campaña: ${error.message}`, "error"); // Show error message
     }
   };
 
@@ -615,52 +615,62 @@ const CampaignsPanel = ({ user, onRefreshStats, onCreateCampaign, refreshTrigger
                     {statusBadge.text}
                   </span>
                   
-                  {/* Botones de acción condicionales */}                  
-                  <div className="flex items-center ml-2 sm:ml-4">
-                    {campaign.status === 'processing' && (
-                      <button 
-                        onClick={(e) => handlePauseCampaign(campaign, e)}
-                        className="p-2 text-yellow-600 hover:text-yellow-800 bg-yellow-100 hover:bg-yellow-200 rounded-full mr-2"
-                        title="Pausar campaña"
-                      >
-                        <FaPause size={16} />
-                      </button>
-                    )}
+                  {/* Botones de Acción */} 
+                  <div className="flex items-center space-x-2">
+                     {campaign.status === "processing" && (
+                       <button 
+                         onClick={(e) => handlePauseCampaign(campaign, e)}
+                         className={`p-1.5 rounded-full hover:bg-gray-200 text-gray-600 disabled:opacity-50 disabled:cursor-not-allowed`}
+                         title="Pausar Campaña"
+                         disabled={!campaign.initialResponse?.queue_id} // <-- Disable if no queue_id
+                       >
+                         <FaPause size={14} />
+                       </button>
+                     )}
+                     {campaign.status === "paused" && (
+                       <button 
+                         onClick={(e) => handleResumeCampaign(campaign, e)}
+                         className={`p-1.5 rounded-full hover:bg-gray-200 text-green-600 disabled:opacity-50 disabled:cursor-not-allowed`}
+                         title="Reanudar Campaña"
+                         disabled={!campaign.initialResponse?.queue_id} // <-- Disable if no queue_id
+                       >
+                         <FaPlay size={14} />
+                       </button>
+                     )}
+                     {(campaign.status === "processing" || campaign.status === "paused" || campaign.status === "scheduled") && (
+                       <button 
+                         onClick={(e) => handleCancelCampaign(campaign, e)}
+                         className={`p-1.5 rounded-full hover:bg-gray-200 text-red-600 disabled:opacity-50 disabled:cursor-not-allowed`}
+                         title="Cancelar Campaña"
+                         disabled={!campaign.initialResponse?.queue_id && campaign.status !== 'scheduled'} // <-- Disable if no queue_id (allow cancel for scheduled)
+                       >
+                         <FaTrash size={14} />
+                       </button>
+                     )}
+                     {/* Botón de borrado (opcional, mantener si se usa) */}
+                     {/* <button 
+                         onClick={() => handleDeleteCampaign(campaign.id)}
+                         className="p-1.5 rounded-full hover:bg-gray-200 text-gray-500"
+                         title="Borrar Campaña (irreversible)"
+                       >
+                         <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                           <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                         </svg>
+                     </button> */}
+                   </div>
 
-                    {campaign.status === 'paused' && (
-                      <button 
-                        onClick={(e) => handleResumeCampaign(campaign, e)}
-                        className="p-2 text-green-600 hover:text-green-800 bg-green-100 hover:bg-green-200 rounded-full mr-2"
-                        title="Reanudar campaña"
-                      >
-                        <FaPlay size={16} />
-                      </button>
-                    )}
-                    
-                    {/* Botón Cancelar (ahora icono) - visible si está processing, paused or scheduled */}
-                    {(campaign.status === 'processing' || campaign.status === 'paused' || campaign.status === 'scheduled') && (
-                      <button 
-                        onClick={(e) => handleCancelCampaign(campaign, e)}
-                        className="p-2 text-red-600 hover:text-red-800 bg-red-100 hover:bg-red-200 rounded-full mr-2"
-                        title="Cancelar campaña"
-                      >
-                        <FaTrash size={16} /> 
-                      </button>
-                    )}
-
-                    {/* Botón de detalles/settings (siempre visible) */}
-                    <button 
-                      onClick={(e) => openDetailsModal(campaign, e)}
-                      className="text-gray-400 bg-transparent border-0 p-0"
-                      title="Ver detalles de la campaña"
-                    >
-                      <img
-                        src="/assets/setting-5.png"
-                        alt="Opciones"
-                        className="w-8 h-8 sm:w-10 sm:h-10 md:w-12 md:h-12"
-                      />
-                    </button>
-                  </div>
+                  {/* Botón de detalles/settings (siempre visible) */}
+                  <button 
+                    onClick={(e) => openDetailsModal(campaign, e)}
+                    className="text-gray-400 bg-transparent border-0 p-0"
+                    title="Ver detalles de la campaña"
+                  >
+                    <img
+                      src="/assets/setting-5.png"
+                      alt="Opciones"
+                      className="w-8 h-8 sm:w-10 sm:h-10 md:w-12 md:h-12"
+                    />
+                  </button>
                 </div>
               </div>
             );
@@ -674,8 +684,10 @@ const CampaignsPanel = ({ user, onRefreshStats, onCreateCampaign, refreshTrigger
           isOpen={showDetailsModal}
           onClose={() => setShowDetailsModal(false)}
           campaignId={selectedCampaign.id}
-          userId={user.uid}
-          onDelete={handleDeleteCampaign}
+          userId={user?.uid}
+          onPause={() => handlePauseCampaign(selectedCampaign, { stopPropagation: () => {} })}
+          onResume={() => handleResumeCampaign(selectedCampaign, { stopPropagation: () => {} })}
+          onCancel={() => handleCancelCampaign(selectedCampaign, { stopPropagation: () => {} })}
         />
       )}
     </div>
@@ -686,7 +698,8 @@ CampaignsPanel.propTypes = {
   user: PropTypes.object.isRequired,
   onRefreshStats: PropTypes.func,
   onCreateCampaign: PropTypes.func,
-  refreshTrigger: PropTypes.number
+  refreshTrigger: PropTypes.number,
+  showNotificationFunc: PropTypes.func
 };
 
 export default CampaignsPanel;

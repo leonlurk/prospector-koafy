@@ -452,8 +452,8 @@ const NuevaCampanaModal = ({ isOpen, onClose, user, instagramToken, onCampaignCr
   
   // --- Función Auxiliar para Preparar y Programar/Iniciar Campaña (Lógica de Cola Estricta) ---
   const prepareAndScheduleCampaign = async (taskType, taskSpecificData) => {
-    if (!user?.uid) {
-      setError("Error: Usuario no autenticado.");
+    if (!user?.uid || !instagramToken) {
+      setError("Error: Usuario no autenticado o token de Instagram ausente.");
       return null;
     }
 
@@ -461,146 +461,156 @@ const NuevaCampanaModal = ({ isOpen, onClose, user, instagramToken, onCampaignCr
     setError("");
     updateProgress(5, "Creando registro de campaña...");
 
+    let campaignId = null;
+    let activated = false;
+    let scheduled = false;
+
     try {
-      await ensureUserExists(user.uid); // Make sure user doc exists
+      await ensureUserExists(user.uid);
 
-      // 1. Check for existing active campaign
+      // --- LOGGING START ---
+      console.log("[Prepare Campaign LOG] Checking for active campaign...");
       const activeCampaign = await getLatestProcessingCampaign(user.uid);
+      console.log("[Prepare Campaign LOG] Result of getLatestProcessingCampaign:", JSON.stringify(activeCampaign));
       const shouldSchedule = !!activeCampaign;
+      console.log(`[Prepare Campaign LOG] Calculated shouldSchedule: ${shouldSchedule}`);
+      // --- LOGGING END ---
 
-      // 2. Prepare campaign data object
+      // 2. Create campaign options payload
       const campaignOptions = createCampaignOptions({
         type: taskType,
-        userId: user.uid, 
-        name: campaignName,
+        name: campaignName || `Campaña ${formatDateTime(new Date())}`,
         targetLink: targetLink,
         targetType: targetType,
-        users: users, 
+        objective: selectedObjective || taskType,
+        users: users,
         messageTemplate: mensaje,
         mediaFile: mediaFile?.name,
         mediaCaption: mediaCaption,
         taskSpecificData: taskSpecificData,
+        // --- Set correct initial status ---
+        status: shouldSchedule ? 'scheduled' : 'processing' // <-- CORE FIX: Use 'scheduled' if needed
+        // --- End status correction ---
       });
-      
+      console.log(`[Prepare Campaign LOG] Campaign options created with status: ${campaignOptions.status}`);
+
+      // 3. Guardar campaña en Firestore
       updateProgress(15, "Guardando campaña en la base de datos...");
-      // 3. Create campaign document in Firestore - Correctly assign the returned ID string
-      const campaignId = await createCampaignStore(user.uid, campaignOptions); 
-      
-      // Validate the received ID
+      campaignId = await createCampaignStore(user.uid, campaignOptions); // Returns ID string
+
+      console.log(`[Prepare Campaign LOG] Value returned by createCampaignStore (campaignId): ${campaignId} (Type: ${typeof campaignId})`);
+
       if (!campaignId || typeof campaignId !== 'string') {
-          throw new Error("Failed to retrieve valid campaign ID from store.");
+          console.error(`[Prepare Campaign LOG] Invalid campaignId obtained after creation: ${campaignId}. Aborting.`);
+          setError("Error crítico: No se pudo obtener un ID válido para la nueva campaña.");
+          setLoading(false);
+          return null;
       }
+      console.log(`[Prepare Campaign LOG] Campaign document created successfully with ID: ${campaignId}, Status: ${campaignOptions.status}`);
 
-      console.log(`Campaign document created with ID: ${campaignId}, Status: ${campaignOptions.status}`);
-      
-      updateProgress(25, "Campaña registrada. Verificando estado...");
-      
-      // 4. If scheduled, we are done for now. Close modal and notify.
-      if (shouldSchedule) {
-        console.log(`Campaign ${campaignId} scheduled because another campaign is active.`);
-        setLoading(false);
-        updateProgress(100, "Campaña programada en cola.");
-        if (typeof onCampaignCreated === 'function') { // <-- Call the callback
-          onCampaignCreated();
+      // --- Activation or Scheduling Logic ---
+      if (!shouldSchedule) { // No active campaign, try immediate activation
+        console.log(`[Prepare Campaign LOG] Campaign ${campaignId} determined as NOT scheduled. Attempting IMMEDIATE activation (status was 'processing').`);
+        const campaignDataForActivation = { id: campaignId, ...campaignOptions }; 
+        console.log(`[Prepare Campaign LOG] Data OBJECT being passed to activateCampaign:`, JSON.stringify(campaignDataForActivation, null, 2));
+
+        activated = await activateCampaign(user.uid, campaignDataForActivation, instagramToken);
+        console.log(`[Prepare Campaign LOG] Result of immediate activateCampaign call: ${activated}`);
+
+        if (activated) {
+          console.log(`[Prepare Campaign LOG] Immediate activation for ${campaignId} reported success by activateCampaign.`);
+          // Monitoring setup (keep as is for now)
+          const jwtToken = localStorage.getItem('instagram_bot_token');
+          if (!jwtToken) console.warn("[Prepare Campaign] JWT Token missing for monitoring.");
+          const { stopMonitoring } = startCampaignMonitoring(user.uid, campaignId, { jwtToken: jwtToken, onUpdate: updateProgress /* ... other callbacks */ });
+          // setStopMonitoringFunc(() => stopMonitoring); // If needed later
+        } else {
+          console.error(`[Prepare Campaign LOG] Immediate activation for ${campaignId} FAILED.`);
+          setError("Error al activar la campaña inmediatamente. Revise la consola.");
+          // Status remains 'processing', let potential background retries handle it? Or set to 'failed'?
         }
-        resetModalState(); // Reset state before closing
-        onClose(); // Close the modal
-        return { scheduled: true, started: false, campaignId: campaignId }; // <-- Return ID correctly
+      } else { // An active campaign exists, campaign was created with 'scheduled' status
+        console.log(`[Prepare Campaign LOG] Campaign ${campaignId} correctly marked as 'scheduled'.`);
+        scheduled = true;
       }
 
-      // 5. If NOT scheduled, attempt to activate it immediately.
-      updateProgress(30, "Activando campaña...");
-      // Start monitoring *after* activation is confirmed
-      // Get JWT token from localStorage
-      const jwtToken = localStorage.getItem('instagram_bot_token'); 
-
-      const { stopMonitoring } = startCampaignMonitoring(user.uid, campaignId, {
-          // Pass both tokens
-          token: instagramToken, // Instagram session token
-          jwtToken: jwtToken,    // Application JWT token
-          // The callback signature was different in the read content vs previous assumption.
-          // Assuming the callback passed is for progress updates only.
-          onUpdate: (update) => { 
-            updateProgress(update.progress, update.message);
-            if (update.status === 'completed' || update.status === 'failed') {
-              if (typeof onCampaignCreated === 'function') {
-                onCampaignCreated();
-              }
-            }
-          }
-        });
-      // Store stopMonitoring function if needed elsewhere, maybe tied to modal close?
-      
-      // Since activation succeeded and monitoring started, trigger refresh and close.
-      if (typeof onCampaignCreated === 'function') { // <-- Call the callback after activation
-        onCampaignCreated();
-      }
-      // setLoading(false); // Keep loading indicator while monitoring runs?
-      // onClose(); // Or keep modal open to show progress?
-      
-      // Pass the correct campaignId and the rest of the data needed by activateCampaign
-      const campaignDataForActivation = { id: campaignId, ...campaignOptions }; 
-      
-      // *** Log DATA BEING PASSED TO activateCampaign (Relevant Fields Only) ***
-      console.log(
-        `[Modal prepareAndSchedule] Data for activateCampaign: `,
-        {
-          id: campaignDataForActivation.id,
-          campaignType: campaignDataForActivation.campaignType,
-          message: campaignDataForActivation.message, // Check this field
-          messageTemplate: campaignDataForActivation.messageTemplate, // Check this field (might be undefined)
-          hasTargetUsers: Array.isArray(campaignDataForActivation.targetUsers) && campaignDataForActivation.targetUsers.length > 0,
+      // --- FINAL STEP TRANSITION & CALLBACK (Corrected Logic) ---
+      if (activated || scheduled) {
+        // Update progress message based on outcome BEFORE changing step
+        let finalStep = 0; // Determine the correct final step
+        if (scheduled) {
+            updateProgress(100, "Campaña programada con éxito."); 
+            finalStep = 5; // Go to 'Scheduled' success step
+        } else if (activated) { // Only activated case reaches here now
+             updateProgress(40, "Campaña activada. Puede cerrar esta ventana."); // Updated message
+             finalStep = 4; // Go to 'Activated' success step
+        } else {
+          // This case should ideally not be reachable if activated/scheduled logic is sound
+          console.error("[Prepare Campaign LOG] Inconsistent state: Neither activated nor scheduled, but entered final block.");
+          finalStep = step; // Stay on current step as fallback
         }
-      );
+        
+        // ***** MOVE TO CORRECT SUCCESS STEP *****
+        if (finalStep === 4 || finalStep === 5) {
+          setStep(finalStep); 
+          console.log(`[Prepare Campaign LOG] Moved to step ${finalStep}. Activated: ${activated}, Scheduled: ${scheduled}`);
+        }
+        // **************************************
 
-      const activated = await activateCampaign(user.uid, campaignDataForActivation, instagramToken);
-      
-      return { scheduled: false, started: true, campaignId: campaignId }; // <-- Return ID correctly
+        // Notify parent AFTER UI transition potentially started
+        if (typeof onCampaignCreated === 'function') {
+          onCampaignCreated(); 
+          console.log(`[Prepare Campaign LOG] onCampaignCreated callback executed.`);
+        }
+      } else {
+         // Handle the case where activation failed (neither activated nor scheduled is true)
+         console.error("[Prepare Campaign LOG] Activation failed, staying on progress/error step.");
+         // Error state should already be set in the 'activated' failure block above
+         // Do NOT move to success step (4 or 5)
+      }
+
+      setLoading(false); // Ensure loading stops
+      return { activated, scheduled };
+
     } catch (error) {
-      console.error("Error preparing/scheduling campaign:", error);
-      setError(`Error al preparar la campaña: ${error.message}`);
-      updateProgress(100, `Error: ${error.message}`);
-      setLoading(false);
-      return null;
+      console.error("[Prepare Campaign LOG] Error caught in prepareAndScheduleCampaign:", error);
+      setError(`Error inesperado: ${error.message}`);
+      // Ensure loading stops on error
+      setLoading(false); 
+      // Consider setting a specific error step if needed, e.g., setStep(errorStepNumber);
+      // Don't transition to success step
+      return null; // Indicate failure
     }
   };
+  // --- END prepareAndScheduleCampaign ---
 
-  // --- Modificar Funciones de Acción (simplificado) --- 
+  // --- Modificar Funciones de Acción (simplificado) ---
 
   // Todas las funciones de acción ahora solo llaman a prepareAndScheduleCampaign
   // y manejan la navegación final (ir al paso 4 o 5)
 
-  const handleCampaignAction = async (taskType, taskData) => {
-      setLoading(true);
-      setError("");
-      updateProgress(0, `Preparando campaña ${taskType}...`);
+  const handleCampaignAction = async (taskType, taskSpecificData = {}) => {
+    console.log(`handleCampaignAction called with taskType: ${taskType}`);
+    try {
+       // The prepareAndScheduleCampaign function now returns an object { campaignId, activated, scheduled }
+       const result = await prepareAndScheduleCampaign(taskType, taskSpecificData);
 
-      try {
-         const { scheduled, started, campaignId } = await prepareAndScheduleCampaign(taskType, taskData);
+       // Optional: Check result if needed, though setStep(4) is handled inside prepareAndScheduleCampaign now
+       if (result) {
+          console.log(`handleCampaignAction: prepareAndScheduleCampaign finished. Result: activated=${result.activated}, scheduled=${result.scheduled}`);
+       } else {
+          console.error("handleCampaignAction: prepareAndScheduleCampaign returned null, indicating an early error.");
+       }
 
-        if (scheduled) {
-            // prepareAndSchedule ya navega al paso 5
-            console.log(`Campaña ${campaignId} programada.`);
-        } else if (started) {
-            // Se inició correctamente
-             updateProgress(100, `${taskType} iniciado.`);
-             setError(null);
-             setStep(4); // Ir a mensaje de éxito/inicio
-             console.log(`Campaña ${campaignId} iniciada inmediatamente.`);
-        } else {
-            // Hubo un error (ya mostrado por prepareAndScheduleCampaign o activateCampaign)
-             console.log("La campaña no pudo ser programada ni iniciada.");
-             // Mantenerse en el paso actual (3) para que el usuario vea el error
-        }
-      } catch (error) {
-         // Errores inesperados en el flujo principal (ya deberían manejarse dentro)
-         console.error("Error inesperado en handleCampaignAction:", error);
-         setError("Ocurrió un error inesperado.");
-      } finally {
-         setLoading(false);
-      }
-  }
-
+    } catch (error) {
+      // This catch block might be redundant if prepareAndScheduleCampaign handles its own errors robustly
+      console.error("Error inesperado en handleCampaignAction:", error);
+      setError(`Error inesperado: ${error.message}`);
+       if(loading) setLoading(false); // Ensure loading is stopped on unexpected error
+    }
+    // No finally setLoading here, prepareAndScheduleCampaign handles it
+  };
+  
   const followAllUsers = () => handleCampaignAction('follow_users', {});
   
   const sendMessages = () => {

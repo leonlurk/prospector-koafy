@@ -303,11 +303,12 @@ const Dashboard = () => {
         fetchTemplates(currentUser.uid);
   
         let finalSelectedOption = null; // Variable to hold the final decision
-  
+        let sessionValid = false; // <-- Declare sessionValid here, outside the try block
+
         try {
           const instagramSession = await getInstagramSession(currentUser.uid);
-          let sessionValid = false;
-  
+          // let sessionValid = false; // <-- Remove declaration from here
+
           if (instagramSession && instagramSession.token) {
             // Restaurar localStorage desde Firebase (para compatibilidad)
             if (instagramSession.token) {
@@ -379,7 +380,7 @@ const Dashboard = () => {
           setSelectedOption(optionToSet);
           
           // Update localStorage only if the session is valid and we are setting a non-connect option
-          if (sessionValid && optionToSet !== "Conectar Instagram") {
+          if (sessionValid && optionToSet !== "Conectar Instagram") { // <-- Now sessionValid is accessible
               localStorage.setItem('lastSelectedOption', optionToSet);
           } 
           
@@ -436,7 +437,7 @@ const Dashboard = () => {
           triggerCampaignsRefresh(); // Refresh the list panel
           
           // Immediately try to activate the next scheduled one
-          const activatedNext = await checkAndActivateNextScheduled(user.uid); // Use the helper function
+          const activatedNext = await checkAndActivateNextScheduled(user.uid); 
           if (activatedNext) {
              console.log(`[Queue Check] Siguiente campaña (${activatedNext.id}) activada inmediatamente.`);
              setCurrentlyProcessingCampaignId(activatedNext.id); // Start tracking the new one
@@ -640,10 +641,11 @@ const Dashboard = () => {
         case 'Campañas':
             return <CampaignsPanel 
                      user={user} 
-                     onRefreshStats={() => {}} // Consider if stats need refresh too 
-                     onCreateCampaign={() => setIsNewCampaignModalOpen(true)} 
-                     refreshTrigger={campaignListVersion} // <-- Pass the trigger prop
-                   />;
+                     onRefreshStats={null} // Add function if needed
+                     onCreateCampaign={() => setIsNewCampaignModalOpen(true)}
+                     refreshTrigger={campaignListVersion}
+                     showNotificationFunc={showNotificationFunc} // <-- Pass the function down
+                    />;
         case 'Blacklist': // Manejado abajo por optionType? Revisar si hay duplicado
             return <SetterBlackListPage />;
         case 'Whitelist':

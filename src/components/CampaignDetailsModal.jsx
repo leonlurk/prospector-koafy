@@ -28,7 +28,7 @@ const formatDuration = (start, end) => {
   return durationStr.trim() || "< 1s";
 };
 
-const CampaignDetailsModal = ({ campaignId, userId, isOpen, onClose, onDelete }) => {
+const CampaignDetailsModal = ({ campaignId, userId, isOpen, onClose }) => {
   const [campaign, setCampaign] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -86,12 +86,10 @@ const CampaignDetailsModal = ({ campaignId, userId, isOpen, onClose, onDelete })
     if (!window.confirm("¿Estás seguro de eliminar esta campaña? Esta acción no se puede deshacer.")) {
       return;
     }
+    console.log(`[Modal Delete] Attempting delete. UserID: ${userId}, CampaignID: ${campaignId}`);
     try {
       const campaignRef = doc(db, "users", userId, "campaigns", campaignId);
       await deleteDoc(campaignRef);
-      if (typeof onDelete === 'function') {
-        onDelete(campaignId);
-      }
       onClose();
     } catch (error) {
       console.error("Error al eliminar la campaña:", error);
@@ -275,7 +273,6 @@ CampaignDetailsModal.propTypes = {
   userId: PropTypes.string.isRequired,
   isOpen: PropTypes.bool.isRequired,
   onClose: PropTypes.func.isRequired,
-  onDelete: PropTypes.func // onDelete es opcional
 };
 
 export default CampaignDetailsModal;
