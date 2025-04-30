@@ -21,14 +21,13 @@ export const createCampaign = async (userId, campaignData) => {
     // Referencia correcta a la subcolección campaigns dentro del documento del usuario
     const campaignsRef = collection(db, "users", userId, "campaigns");
     
-    // Asegurar que los campos necesarios existen
+    // Prepare campaign data for saving
     const campaignDataToSave = {
-      ...campaignData,
+      ...campaignData,          // Spread the incoming data first (contains the correct status)
       createdAt: new Date(),
       lastUpdated: new Date(),
-      status: "processing", 
-      progress: 0,
-      totalProcessed: 0
+      progress: campaignData.progress !== undefined ? campaignData.progress : 0, // Keep existing progress if provided, else 0
+      totalProcessed: campaignData.totalProcessed !== undefined ? campaignData.totalProcessed : 0 // Keep existing processed if provided, else 0
     };
     
     // *** Log ANTES de addDoc ***

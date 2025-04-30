@@ -40,12 +40,12 @@ const getMenuItems = (isInstagramConnected, toolContext) => {
         /* // Blocked Herramientas
         const herramientasDropdown = {
             name: "Herramientas",
-            icon: <FaTools className="md:w-5 md:h-6 text-white" />, 
-            subItems: [
-                { name: "Prospector", label: "Prospector", icon: <FaHome className="md:w-5 md:h-6 text-white" /> }, 
-                { name: "Setter IA", label: "Setter IA", icon: <FaRobot className="md:w-5 md:h-6 text-white" /> }, 
-                { name: "Calendar", label: "Calendar", icon: <FaCalendarAlt className="md:w-5 md:h-6 text-white" /> } 
-            ]
+                icon: <FaTools className="md:w-5 md:h-6 text-white" />, 
+                subItems: [
+                    { name: "Prospector", label: "Prospector", icon: <FaHome className="md:w-5 md:h-6 text-white" /> }, 
+                    { name: "Setter IA", label: "Setter IA", icon: <FaRobot className="md:w-5 md:h-6 text-white" /> }, 
+                    { name: "Calendar", label: "Calendar", icon: <FaCalendarAlt className="md:w-5 md:h-6 text-white" /> } 
+                ]
         };
         */
 
@@ -129,7 +129,7 @@ const getMenuItems = (isInstagramConnected, toolContext) => {
     
     // Filter out Herramientas just in case (though already commented)
     prospectorMenuItems = prospectorMenuItems.filter(item => item.name !== "Herramientas");
-
+    
     return prospectorMenuItems;
 };
 

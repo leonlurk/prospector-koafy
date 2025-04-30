@@ -304,11 +304,11 @@ const Dashboard = () => {
   
         let finalSelectedOption = null; // Variable to hold the final decision
         let sessionValid = false; // <-- Declare sessionValid here, outside the try block
-
+  
         try {
           const instagramSession = await getInstagramSession(currentUser.uid);
           // let sessionValid = false; // <-- Remove declaration from here
-
+          
           if (instagramSession && instagramSession.token) {
             // Restaurar localStorage desde Firebase (para compatibilidad)
             if (instagramSession.token) {
