@@ -21,7 +21,7 @@ const CampaignsPanel = ({ user, onRefreshStats, onCreateCampaign, refreshTrigger
   const [showDetailsModal, setShowDetailsModal] = useState(false);
 
   // Opciones para los dropdowns
-  const estadoOptions = ["Todas", "Activas", "Pausadas", "Terminadas"];
+  const estadoOptions = ["Todas", "Activas", "Pausadas", "Terminadas", "En Cola"];
   const tipoOptions = ["Todos", "Mensajes", "Comentarios", "Seguimientos"];
 
   // Función corregida que usa el simulador local
@@ -361,6 +361,7 @@ const CampaignsPanel = ({ user, onRefreshStats, onCreateCampaign, refreshTrigger
     // Filtro por estado
     if (selectedEstado === "Activas" && campaign.status !== "processing") return false;
     if (selectedEstado === "Pausadas" && campaign.status !== "paused") return false;
+    if (selectedEstado === "En Cola" && campaign.status !== "scheduled") return false;
     if (selectedEstado === "Terminadas" && 
       campaign.status !== "completed" && 
       campaign.status !== "cancelled" && 

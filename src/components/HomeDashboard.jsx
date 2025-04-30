@@ -192,7 +192,7 @@ const HomeDashboard = ({ user, onCreateCampaign, navigateToCampaigns, isInstagra
   return (
     <div className="p-4 md:p-6 bg-[#F3F2FC] min-h-screen font-['Poppins']">
       <div className="mb-6">
-        <h2 className="text-lg text-gray-600 font-normal">Hola, {user?.displayName || user?.email || "Usuario"},</h2>
+        <h2 className="text-lg text-gray-600 font-normal">Hola, {user?.displayName || user?.email || "Usuario"}</h2>
         <h1 className="text-2xl font-medium text-black">Bienvenido a Tribe IA</h1>
       </div>
 
