@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useWhatsApp } from '../context/WhatsAppContext';
 import QRCode from 'qrcode';
+import { useNavigate } from 'react-router-dom';
 
 function WhatsAppPage() {
   const { 
@@ -13,6 +14,7 @@ function WhatsAppPage() {
   } = useWhatsApp();
 
   const [qrCodeDataUrl, setQrCodeDataUrl] = useState('');
+  const navigate = useNavigate();
 
   useEffect(() => {
     if (whatsappStatus.qr) {
@@ -29,6 +31,12 @@ function WhatsAppPage() {
       checkStatus(currentUser.id);
     }
   }, [currentUser]);
+
+  useEffect(() => {
+    if (whatsappStatus.status === 'connected') {
+      navigate('/agents');
+    }
+  }, [whatsappStatus.status, navigate]);
 
   const handleConnect = () => {
     if (currentUser) {

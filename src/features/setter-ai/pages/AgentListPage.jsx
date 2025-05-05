@@ -202,10 +202,11 @@ Error agentes: ${agentsResponse.data?.message || agentsResponse.message}` : `Err
           setAgents([]);
         }
 
-        if (activeAgentResponse.success && activeAgentResponse.data?.success && activeAgentResponse.data.data?.id) {
-          setActiveAgentId(activeAgentResponse.data.data.id);
+        if (activeAgentResponse.success && activeAgentResponse.data?.success) {
+          setActiveAgentId(activeAgentResponse.data.activeAgentId || null);
         } else if (activeAgentResponse.data?.message !== 'No active agent found for this user.') {
           console.warn("Error al obtener agente activo:", activeAgentResponse.data?.message || activeAgentResponse.message);
+          setActiveAgentId(null);
         }
       })
       .catch(err => {

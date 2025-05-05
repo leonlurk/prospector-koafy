@@ -6,7 +6,7 @@ import {
     FaInstagram, FaTimes, FaBan, FaHome, FaChartBar, FaTools, FaCalendarAlt, FaRobot, 
     // Add more icons as needed for Setter menu
     FaTachometerAlt, FaServer, FaShieldAlt, FaExchangeAlt, FaUsersCog, FaCreditCard, FaBell, FaLifeRing, FaCog, FaUserCircle, FaSignOutAlt,
-    FaWhatsapp, FaCommentDots
+    FaWhatsapp, FaCommentDots, FaFileAlt
 } from "react-icons/fa"; 
 import { doc, getDoc } from "firebase/firestore";
 import { db } from "./firebaseConfig";
@@ -36,18 +36,17 @@ const getMenuItems = (isInstagramConnected, toolContext) => {
     
     // --- IF SETTER CONTEXT IS ACTIVE --- 
     if (toolContext === 'setter') {
-        // Define the Herramientas dropdown separately (but we won't add it)
-        /* // Blocked Herramientas
+        // Define the Herramientas dropdown separately (now uncommented)
         const herramientasDropdown = {
             name: "Herramientas",
                 icon: <FaTools className="md:w-5 md:h-6 text-white" />, 
                 subItems: [
                     { name: "Prospector", label: "Prospector", icon: <FaHome className="md:w-5 md:h-6 text-white" /> }, 
                     { name: "Setter IA", label: "Setter IA", icon: <FaRobot className="md:w-5 md:h-6 text-white" /> }, 
-                    { name: "Calendar", label: "Calendar", icon: <FaCalendarAlt className="md:w-5 md:h-6 text-white" /> } 
+                    // { name: "Calendar", label: "Calendar", icon: <FaCalendarAlt className="md:w-5 md:h-6 text-white" /> },
+                    { name: "CRMWhatsApp", label: "CRM WhatsApp", icon: <FaWhatsapp className="md:w-5 md:h-6 text-white" /> }
                 ]
         };
-        */
 
         // Get the main Setter items (filter out bottom and commented items)
         const mainSetterItems = setterMenuItems.filter(item => 
@@ -62,7 +61,7 @@ const getMenuItems = (isInstagramConnected, toolContext) => {
 
         if (connectionsItem) combinedSetterMenu.push(connectionsItem);
         if (agentsItem) combinedSetterMenu.push(agentsItem);
-        // combinedSetterMenu.push(herramientasDropdown); // <-- Do not add Herramientas
+        combinedSetterMenu.push(herramientasDropdown); // <-- UNCOMMENTED: Add Herramientas
 
         // Add any remaining mainSetterItems (if any were added back later)
         mainSetterItems.forEach(item => {
@@ -76,35 +75,37 @@ const getMenuItems = (isInstagramConnected, toolContext) => {
 
     // --- IF CALENDAR CONTEXT IS ACTIVE --- (Placeholder)
     if (toolContext === 'calendar') {
-        // Return Calendar specific items + Herramientas dropdown (Blocked)
+        // Return Calendar specific items + Herramientas dropdown (Now unblocked)
         return [
-            /* // Blocked Herramientas
             {
                 name: "Herramientas", 
                 icon: <FaTools className="md:w-5 md:h-6 text-white" />, 
-                subItems: [ /* ... subitems ... * / ]
+                subItems: [
+                    { name: "Prospector", label: "Prospector", icon: <FaHome className="md:w-5 md:h-6 text-white" /> }, 
+                    { name: "Setter IA", label: "Setter IA", icon: <FaRobot className="md:w-5 md:h-6 text-white" /> }, 
+                    // { name: "Calendar", label: "Calendar", icon: <FaCalendarAlt className="md:w-5 md:h-6 text-white" /> },
+                    { name: "CRMWhatsApp", label: "CRM WhatsApp", icon: <FaWhatsapp className="md:w-5 md:h-6 text-white" /> }
+                ]
             },
-            */
             { name: "CalendarView", label: "Vista Calendario", icon: <FaCalendarAlt className="md:w-5 md:h-6 text-white" /> },
         ];
     }
 
-    // --- DEFAULT CONTEXT (Prospector/Home) --- 
+    // --- DEFAULT CONTEXT (Prospector/Home) ---
     let prospectorMenuItems = [
         { name: "Home", label: "Home", icon: "/assets/Home.png" },
         { name: "Plantillas", label: "Plantillas", icon: "/assets/device-message.png" },
-        // Herramientas dropdown definition (commented out here too)
-        /* // Blocked Herramientas
+        // Herramientas dropdown definition (uncommented now)
         {
             name: "Herramientas",
-            icon: <FaTools className="md:w-5 md:h-6 text-white" />, 
+            icon: <FaTools className="md:w-5 md:h-6 text-white" />,
             subItems: [
-                { name: "Prospector", label: "Prospector", icon: <FaHome className="md:w-5 md:h-6 text-white" /> }, 
-                { name: "Setter IA", label: "Setter IA", icon: <FaRobot className="md:w-5 md:h-6 text-white" /> }, 
-                { name: "Calendar", label: "Calendar", icon: <FaCalendarAlt className="md:w-5 md:h-6 text-white" /> } 
+                { name: "Prospector", label: "Prospector", icon: <FaHome className="md:w-5 md:h-6 text-white" /> },
+                { name: "Setter IA", label: "Setter IA", icon: <FaRobot className="md:w-5 md:h-6 text-white" /> },
+                // { name: "Calendar", label: "Calendar", icon: <FaCalendarAlt className="md:w-5 md:h-6 text-white" /> },
+                { name: "CRMWhatsApp", label: "CRM WhatsApp", icon: <FaWhatsapp className="md:w-5 md:h-6 text-white" /> }
             ]
         }
-        */
     ];
     
     if (isInstagramConnected) {
@@ -127,9 +128,6 @@ const getMenuItems = (isInstagramConnected, toolContext) => {
         );
     }
     
-    // Filter out Herramientas just in case (though already commented)
-    prospectorMenuItems = prospectorMenuItems.filter(item => item.name !== "Herramientas");
-    
     return prospectorMenuItems;
 };
 
@@ -143,7 +141,8 @@ const getBottomItems = (toolContext) => {
     return [
         // { name: "Ajustes", label: "Ajustes", icon: "/assets/setting-2.png" }, // <-- Commented out
         // { name: "Light Mode", label: "Light Mode", icon: "/assets/arrange-circle-2.png" } // <-- Commented out
-];
+        // { name: "Documentos", label: "Documentos", icon: <FaFileAlt className="md:w-5 md:h-6 text-white" />, path: "/documentos" } // Commented out Documentos item
+    ];
 };
 
 
@@ -211,11 +210,14 @@ const Sidebar = ({
         // Determine target based on subItem
         if (parentItemName === "Herramientas") {
             if (subItem.name === "Setter IA") targetOption = "SetterConnections"; // <-- CHANGE THIS: Go to Connections instead of Dashboard
-            else if (subItem.name === "Calendar") targetOption = "CalendarView"; // Go to Calendar's main view
+            // else if (subItem.name === "Calendar") targetOption = "CalendarView"; // Go to Calendar's main view (Commented out)
             // Prospector click should now navigate back to Home
             else if (subItem.name === "Prospector") {
                  console.log("[Sidebar Click] Prospector clicked. Setting targetOption to Home.");
                  targetOption = "Home"; // <--- CHANGE THIS: Set target to Home
+            } else if (subItem.name === "CRMWhatsApp") { // Added case for CRMWhatsApp
+                 console.log("[Sidebar Click] CRMWhatsApp clicked. Setting targetOption to CRMWhatsApp.");
+                 targetOption = "CRMWhatsApp";
             }
         } else if (parentItemName === "Listas") {
              targetOption = subItem.name; // Whitelist or Blacklist

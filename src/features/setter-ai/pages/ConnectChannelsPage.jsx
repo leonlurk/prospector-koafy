@@ -139,46 +139,6 @@ function ConnectChannelsPage() {
               </CardActions>
             </Card>
           </Grid>
-
-          {/* Grid item 2 - Aplicar props directamente */}
-           <Grid size={{ xs: 12, sm: 6, md: 4 }}>
-             <Card sx={{ borderRadius: '16px', boxShadow: 3 }}>
-               <Box sx={{ 
-                  height: 180, 
-                  display: 'flex', 
-                  alignItems: 'center', 
-                  justifyContent: 'center',
-                  backgroundImage: `url(${fondoPng})`, // <-- USAR VARIABLE IMPORTADA
-                  backgroundSize: 'cover', // <-- RESTAURAR COVER
-                  backgroundPosition: 'center',
-                  backgroundRepeat: 'no-repeat'
-              }}>
-
-              </Box>
-              <CardContent>
-                <Typography gutterBottom variant="h6" component="div" sx={{ fontWeight: 'bold' }}>
-                  Conecta con WhatsApp Link
-                </Typography>
-                 <Typography variant="body2" color="text.secondary">
-                  Hace 4 Horas {/* Texto placeholder como en Figma */}
-                </Typography>
-                <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
-                   Aprende a como sacarle el maximo provecho a los agentes IA
-                </Typography>
-              </CardContent>
-              <CardActions sx={{ justifyContent: 'center', pb: 2 }}>
-                <Button 
-                  variant="contained" 
-                  size="large" 
-                  // onClick={/* Definir acción si es diferente */}
-                  sx={{ borderRadius: '20px', textTransform: 'none', px: 4 }}
-                  disabled // Deshabilitado si no es funcional aún
-                >
-                  Ingresar
-                </Button>
-              </CardActions>
-            </Card>
-          </Grid>
         </Grid>
       )}
 

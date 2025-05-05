@@ -323,7 +323,7 @@ export const getActiveAgent = async (userId) => {
   try {
     const response = await axios({
       ...createFetchOptions('GET'),
-      url: `${API_BASE_URL}/users/${userId}/agents/active`
+      url: `${API_BASE_URL}/users/${userId}/active-agent`
     });
     return handleResponse(response);
   } catch (error) {

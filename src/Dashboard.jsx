@@ -30,11 +30,16 @@ import WhatsAppPage from './features/setter-ai/pages/WhatsAppPage';
 import AgentDescriptionSetupPage from './features/setter-ai/pages/AgentDescriptionSetupPage'; 
 import KnowledgeBasePage from './features/setter-ai/pages/KnowledgeBasePage'; // Asumiendo que estos se usan si se navega directamente
 
+// Importar el nuevo componente Documentos
+import Documentos from './Documentos';
+// Importar el componente CRM WhatsApp
+import WhatsAppCRM from './components/WhatsAppCRM';
+
 // Helper function to determine the current tool context based on selectedOption
 const getToolContext = (option) => {
   const prospectorOptions = [
     "Home", "Plantillas", "Campañas", "Listas", "Whitelist", 
-    "Blacklist", "Nueva Campaña", "Conectar Instagram", "Estadísticas", "Send Media",
+    "Blacklist", "Nueva Campaña", "Conectar Instagram", "Estadísticas", "Send Media", "CRMWhatsApp",
     // Add generic options possibly shared or belonging to prospector
     "Ajustes", "Light Mode" 
   ];
@@ -753,8 +758,12 @@ const Dashboard = () => {
           )}
         </div>
       );
+        case 'Documentos': // Nuevo caso para Documentos
+            return <Documentos />;
         case 'Estadísticas': // Manejado abajo por optionType? Revisar
              return <StatisticsDashboard user={user} />;
+        case 'CRMWhatsApp': // Nuevo caso para CRM WhatsApp
+            return <WhatsAppCRM user={user} />; // Componente real de CRM WhatsApp
         // Añadir otros casos directos si son necesarios ('Nueva Campaña', 'Send Media'?) 
         // Nota: 'Nueva Campaña' y 'Send Media' parecen manejarse abriendo modales, no cambiando la vista principal directamente.
         
