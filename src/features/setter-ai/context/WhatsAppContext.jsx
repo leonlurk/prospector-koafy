@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { getAuth, onAuthStateChanged, signOut } from "firebase/auth";
 import { getFirestore, doc, onSnapshot } from "firebase/firestore";
 import { auth, db } from '../../../firebaseConfig';
@@ -25,11 +25,25 @@ export const WhatsAppProvider = ({ children }) => {
   });
   const [isLoading, setIsLoading] = useState(false);
   const [notifications, setNotifications] = useState([]);
+  const [redirectCallback, setRedirectCallback] = useState(null);
+
+  const registerRedirectCallback = useCallback((callback) => {
+    console.log("[WhatsAppContext] Registering redirect callback.");
+    setRedirectCallback(() => callback);
+  }, []);
+
+  useEffect(() => {
+    if (whatsappStatus.status === 'connected' && redirectCallback) {
+      console.log("[WhatsAppContext] WhatsApp connected and redirect callback found. Executing redirect...");
+      redirectCallback();
+    }
+  }, [whatsappStatus.status, redirectCallback]);
 
   useEffect(() => {
     const unsubscribeAuth = onAuthStateChanged(auth, (user) => {
       if (user) {
         console.log("Firebase User Signed In:", user);
+        console.log('[WhatsAppContext] Setting currentUser with user data:', { uid: user.uid, email: user.email, name: user.displayName });
         setCurrentUser({
           uid: user.uid,
           email: user.email,
@@ -38,6 +52,7 @@ export const WhatsAppProvider = ({ children }) => {
         checkStatus(user.uid);
       } else {
         console.log("Firebase User Signed Out");
+        console.log('[WhatsAppContext] Setting currentUser to null');
         setCurrentUser(null);
         setWhatsappStatus({ status: 'disconnected', qr: null, error: null, message: null });
       }
@@ -196,7 +211,8 @@ export const WhatsAppProvider = ({ children }) => {
     notifications,
     addNotification,
     clearNotifications,
-    logout
+    logout,
+    registerRedirectCallback
   };
 
   return (

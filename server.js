@@ -135,6 +135,7 @@ app.use(authenticateApiKey);
 // --- Gestión de Workers ---
 const workers = {}; // Almacena los procesos worker activos { userId: ChildProcess }
 const wsClients = new Map(); // <<< ADDED: Map to store WebSocket clients { userId: WebSocket }
+const connectingUsers = new Set(); // <<< ADDED: Set to track users currently being connected
 
 // --- WebSocket Server Logic ---
 wss.on('connection', (ws, req) => {
@@ -252,15 +253,29 @@ function notifyWorker(userId, message) {
 // --- Reemplazo Firestore y Async ---
 async function startWorker(userId) {
     console.log(`[Server][CRITICAL] INICIANDO worker para usuario ${userId}...`);
+
+    // <<< ADDED: Check and set connection lock >>>
+    if (connectingUsers.has(userId)) {
+        console.warn(`[Server][CRITICAL] Intento de inicio concurrente para ${userId} bloqueado (ya está en proceso).`);
+        // Return a specific value or throw an error to indicate concurrent attempt
+        // For now, returning null mimics a failure to start, preventing multiple starts.
+        return null; // Indicate connection is already in progress
+    }
+    connectingUsers.add(userId);
+    console.log(`[Server][DEBUG] Locking connection attempt for ${userId}. connectingUsers:`, connectingUsers);
+    // <<< END ADDED >>>
+
     try {
-        // Verificar si ya existe un worker para este usuario
-        if (workers[userId]) {
-            console.warn(`[Server][CRITICAL] Ya existe un worker para ${userId}. Estado actual: ${workers[userId]?.connected ? 'conectado' : 'desconectado'}`);
-            // Quizás necesitemos reiniciarlo?
-            return workers[userId];
+        // Verificar si ya existe un worker *activo* para este usuario
+        if (workers[userId] && workers[userId].connected) { // <<< Check .connected explicitly >>>
+            console.warn(`[Server][CRITICAL] Ya existe un worker CONECTADO para ${userId}. No se iniciará uno nuevo.`);
+            // <<< MODIFIED: Release lock and return existing worker >>>
+            connectingUsers.delete(userId);
+            console.log(`[Server][DEBUG] Releasing lock (worker already exists) for ${userId}. connectingUsers:`, connectingUsers);
+            return workers[userId]; // Return the existing *connected* worker
         }
 
-        // Limpiar worker zombie si existe
+        // Limpiar worker zombie si existe (no conectado)
         if (workers[userId] && !workers[userId].connected) {
             console.warn(`[Server][CRITICAL] Worker para ${userId} existe pero no está conectado. Intentando limpiar y reiniciar.`);
             try { workers[userId].kill(); } catch (e) { console.error("Error matando worker zombie:", e); }
@@ -311,6 +326,7 @@ async function startWorker(userId) {
         }
         const worker = fork(workerScript, workerArgs, { stdio: 'inherit' });
         workers[userId] = worker;
+        console.log(`[Server][DEBUG] Worker PID ${worker.pid} added to workers map for ${userId}.`); // Log adding to map
 
         // <<< MODIFIED: Actualizar Firestore - Documento principal y subcolección de estado >>>
         const timestamp = admin.firestore.FieldValue.serverTimestamp();
@@ -367,6 +383,10 @@ async function startWorker(userId) {
                 } else {
                     console.log(`[Server] No se actualiza subcolección status en exit para ${userId}, estado ya era disconnected o worker no registrado.`);
                 }
+                 // <<< ADDED: Release lock on exit >>>
+                 connectingUsers.delete(userId);
+                 console.log(`[Server][DEBUG] Releasing lock (worker exit) for ${userId}. connectingUsers:`, connectingUsers);
+                // <<< END ADDED >>>
                 // <<< END MODIFICATION >>>
             } catch (dbErr) {
                 console.error("[Server][Firestore Error] Error obteniendo/actualizando status en exit:", dbErr);
@@ -376,6 +396,10 @@ async function startWorker(userId) {
         worker.on('error', async (error) => {
             console.error(`[Server] Error en worker ${userId} (PID: ${worker.pid || 'N/A'}):`, error);
             delete workers[userId]; // Eliminar referencia del worker localmente
+             // <<< ADDED: Release lock on error >>>
+             connectingUsers.delete(userId);
+             console.log(`[Server][DEBUG] Releasing lock (worker error event) for ${userId}. connectingUsers:`, connectingUsers);
+             // <<< END ADDED >>>
             try {
                 // <<< MODIFIED: Actualizar Firestore - Documento principal (PID) y subcolección (estado error) >>>
                 const userDocRef = firestoreDb.collection('users').doc(userId);
@@ -401,10 +425,21 @@ async function startWorker(userId) {
         // <<< ADDED: Enviar configuración inicial al worker >>>
         fetchInitialConfigsAndNotifyWorker(userId, activeAgentId);
 
+        // <<< ADDED: Release lock after successful start sequence (before return) >>>
+        // Note: We release slightly early, assuming the critical part is avoiding the fork() race.
+        // If IPC/DB updates fail later, the worker might still exit and release again.
+        connectingUsers.delete(userId);
+        console.log(`[Server][DEBUG] Releasing lock (after successful start sequence) for ${userId}. connectingUsers:`, connectingUsers);
+        // <<< END ADDED >>>
 
         return worker; // Devuelve la instancia del worker
     } catch (error) {
         console.error(`[Server][CRITICAL] Error CRÍTICO iniciando worker para ${userId}:`, error);
+         // <<< ADDED: Ensure lock is released on critical error >>>
+         connectingUsers.delete(userId);
+         console.log(`[Server][DEBUG] Releasing lock (critical start error) for ${userId}. connectingUsers:`, connectingUsers);
+         // <<< END ADDED >>>
+
         // Asegurar que el estado en DB sea error si falló la inicialización
         try {
             // <<< MODIFIED: Actualizar Firestore - Documento principal y subcolección de estado en caso de error CRÍTICO al inicio >>>
@@ -466,17 +501,18 @@ async function fetchInitialConfigsAndNotifyWorker(userId, activeAgentId) {
         const startersData = startersSnapshot.docs.map(doc => doc.data());
         console.log(`   -> Starters cargados: ${startersData.length}`);
 
-        // 4. Obtener Flujos (Globales)
-        const flowsSnapshot = await firestoreDb.collection('action_flows').get();
+        // 4. Obtener Flujos (ESPECÍFICOS DEL USUARIO)
+        const flowsSnapshot = await userDocRef.collection('action_flows').get(); // <-- CAMBIO DE RUTA
         const flowsData = flowsSnapshot.docs.map(doc => doc.data());
-        console.log(`   -> Flujos globales cargados: ${flowsData.length}`);
+        console.log(`   -> Flujos del usuario cargados: ${flowsData.length}`); // <-- LOG ACTUALIZADO
 
         // 5. Enviar configuración al worker
         const initialConfigPayload = {
             agentConfig: agentConfigData, // Puede ser null si no hay o no se encuentra
             rules: rulesData,
             starters: startersData,
-            flows: flowsData
+            flows: flowsData // <-- AHORA SON LOS FLUJOS DEL USUARIO
+            // No necesitamos enviar writingSampleTxt aquí, ya está dentro de agentConfigData si existe
         };
 
         notifyWorker(userId, { type: 'INITIAL_CONFIG', payload: initialConfigPayload });
@@ -1098,13 +1134,21 @@ app.delete('/users/:userId/gemini-starters/:starterId', async (req, res) => {
 });
 
 
-// === Rutas para Flujos de Acción (Firestore) ===
+// === Rutas para Flujos de Acción (Firestore) === // <-- CAMBIO DE NOMBRE DE SECCIÓN
 
-// GET /action-flows - Listar todos los flujos
-app.get('/action-flows', async (req, res) => {
-    console.log(`[Server] GET /action-flows`);
+// GET /users/:userId/action-flows - Listar todos los flujos de un usuario
+app.get('/users/:userId/action-flows', async (req, res) => { // <-- CAMBIO DE RUTA
+    const userId = req.params.userId; // <-- OBTENER userId
+    console.log(`[Server] GET /users/${userId}/action-flows`);
     try {
-        const flowsSnapshot = await firestoreDb.collection('action_flows').orderBy('createdAt', 'desc').get();
+        // Verificar si el usuario existe (opcional pero bueno)
+        const userDoc = await firestoreDb.collection('users').doc(userId).get();
+        if (!userDoc.exists) {
+             return res.status(404).json({ success: false, message: 'Usuario no encontrado.' });
+        }
+
+        // Consultar subcolección específica del usuario
+        const flowsSnapshot = await firestoreDb.collection('users').doc(userId).collection('action_flows').orderBy('createdAt', 'desc').get(); // <-- CAMBIO DE RUTA FIRESTORE
         const flows = [];
         flowsSnapshot.forEach(doc => {
             // Convertir Timestamps si es necesario para el cliente
@@ -1115,59 +1159,70 @@ app.get('/action-flows', async (req, res) => {
         });
         res.json({ success: true, data: flows });
     } catch (err) {
-        console.error(`[Server][Firestore Error] Error listando flujos de acción:`, err);
+        console.error(`[Server][Firestore Error] Error listando flujos de acción para ${userId}:`, err); // <-- ACTUALIZAR LOG
+        if (err.code === 5 || (err.message && err.message.includes("NOT_FOUND"))) { // Puede ser error al encontrar user o collection
+            console.warn(`[Server] Usuario ${userId} no encontrado o sin colección de action_flows.`);
+            return res.json({ success: true, data: [] }); // Devolver vacío si no existe user o colección
+        }
         res.status(500).json({ success: false, message: 'Error interno al listar flujos.' });
     }
 });
 
-// POST /action-flows - Crear un nuevo flujo
-app.post('/action-flows', async (req, res) => {
-    console.log(`[Server] POST /action-flows`);
+// POST /users/:userId/action-flows - Crear un nuevo flujo para un usuario
+app.post('/users/:userId/action-flows', async (req, res) => { // <-- CAMBIO DE RUTA
+    const userId = req.params.userId; // <-- OBTENER userId
+    console.log(`[Server] POST /users/${userId}/action-flows`);
     const flowData = req.body;
 
     if (!flowData || typeof flowData !== 'object' || !flowData.name || !flowData.trigger || !Array.isArray(flowData.steps)) {
         return res.status(400).json({ success: false, message: 'Datos del flujo inválidos. Se requiere name, trigger y steps (array).' });
     }
 
-    const flowId = uuidv4();
-    const timestamp = admin.firestore.FieldValue.serverTimestamp();
-    const newFlow = {
-        ...flowData,
-        id: flowId,
-        createdAt: timestamp,
-        updatedAt: timestamp
-    };
+    const flowsCollectionRef = firestoreDb.collection('users').doc(userId).collection('action_flows'); // <-- RUTA FIRESTORE USER-SPECIFIC
+    const userDocRef = firestoreDb.collection('users').doc(userId);
 
     try {
-        await firestoreDb.collection('action_flows').doc(flowId).set(newFlow);
-        console.log(`[Server] Flujo de acción creado en Firestore: ${flowId} - ${newFlow.name}`);
+        // Verificar si el usuario existe
+        const userDoc = await userDocRef.get();
+        if (!userDoc.exists) {
+             return res.status(404).json({ success: false, message: 'Usuario no encontrado.' });
+        }
 
-        // Notificar a TODOS los workers activos
-        console.log(`[Server] Recargando y notificando flujos a todos los workers...`);
-        const allFlowsSnapshot = await firestoreDb.collection('action_flows').get();
-        const allFlowsData = allFlowsSnapshot.docs.map(doc => doc.data());
-        // Optimization Note: Sending all flows to all workers on any change might be inefficient
-        // at scale. Consider sending only changed/new flows if performance becomes an issue.
-        Object.keys(workers).forEach(workerUserId => {
-             // <<< UPDATED: Notificar a todos los workers (CON PAYLOAD) >>>
-             notifyWorker(workerUserId, { type: 'COMMAND', command: 'RELOAD_FLOWS', payload: { flows: allFlowsData } });
-        });
+        const flowId = uuidv4();
+        const timestamp = admin.firestore.FieldValue.serverTimestamp();
+        const newFlow = {
+            ...flowData,
+            id: flowId,
+            createdAt: timestamp,
+            updatedAt: timestamp
+        };
 
-        // Devolver el flujo con timestamps resueltos (aproximados ya que set no los devuelve)
+        await flowsCollectionRef.doc(flowId).set(newFlow); // <-- GUARDAR EN SUBCOLECCIÓN
+        console.log(`[Server] Flujo de acción creado para ${userId} en Firestore: ${flowId} - ${newFlow.name}`);
+
+        // Notificar al worker específico de este usuario
+        console.log(`[Server] Recargando y notificando flujos al worker ${userId}...`);
+        const userFlowsSnapshot = await flowsCollectionRef.get(); // <-- OBTENER SOLO FLUJOS DEL USUARIO
+        const userFlowsData = userFlowsSnapshot.docs.map(doc => doc.data());
+
+        // Nuevo comando IPC específico para flujos de usuario
+        notifyWorker(userId, { type: 'RELOAD_USER_FLOWS', payload: { flows: userFlowsData } }); // <-- NUEVO COMANDO Y PAYLOAD
+
+        // Devolver el flujo con timestamps resueltos (aproximados)
         const createdFlow = { ...newFlow, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
         res.status(201).json({ success: true, message: 'Flujo de acción creado.', data: createdFlow });
     } catch (err) {
-        console.error(`[Server][Firestore Error] Error creando flujo de acción:`, err);
+        console.error(`[Server][Firestore Error] Error creando flujo de acción para ${userId}:`, err); // <-- ACTUALIZAR LOG
         res.status(500).json({ success: false, message: 'Error interno al guardar el flujo.' });
     }
 });
 
-// GET /action-flows/:flowId - Obtener un flujo específico
-app.get('/action-flows/:flowId', async (req, res) => {
-    const flowId = req.params.flowId;
-    console.log(`[Server] GET /action-flows/${flowId}`);
+// GET /users/:userId/action-flows/:flowId - Obtener un flujo específico de un usuario
+app.get('/users/:userId/action-flows/:flowId', async (req, res) => { // <-- CAMBIO DE RUTA
+    const { userId, flowId } = req.params; // <-- OBTENER userId Y flowId
+    console.log(`[Server] GET /users/${userId}/action-flows/${flowId}`);
     try {
-        const flowDoc = await firestoreDb.collection('action_flows').doc(flowId).get();
+        const flowDoc = await firestoreDb.collection('users').doc(userId).collection('action_flows').doc(flowId).get(); // <-- CAMBIO DE RUTA FIRESTORE
         if (!flowDoc.exists) {
              return res.status(404).json({ success: false, message: 'Flujo de acción no encontrado.' });
         }
@@ -1177,30 +1232,25 @@ app.get('/action-flows/:flowId', async (req, res) => {
         if (data.updatedAt?.toDate) data.updatedAt = data.updatedAt.toDate().toISOString();
         res.json({ success: true, data: data });
     } catch (err) {
-        console.error(`[Server][Firestore Error] Error obteniendo flujo ${flowId}:`, err);
+        console.error(`[Server][Firestore Error] Error obteniendo flujo ${flowId} para ${userId}:`, err); // <-- ACTUALIZAR LOG
         res.status(500).json({ success: false, message: 'Error interno al obtener el flujo.' });
     }
 });
 
-// PUT /action-flows/:flowId - Actualizar un flujo existente
-app.put('/action-flows/:flowId', async (req, res) => {
-    const flowId = req.params.flowId;
+// PUT /users/:userId/action-flows/:flowId - Actualizar un flujo existente de un usuario
+app.put('/users/:userId/action-flows/:flowId', async (req, res) => { // <-- CAMBIO DE RUTA
+    const { userId, flowId } = req.params; // <-- OBTENER userId Y flowId
     const updatedFlowData = req.body;
-    console.log(`[Server] PUT /action-flows/${flowId}`);
+    console.log(`[Server] PUT /users/${userId}/action-flows/${flowId}`);
 
     if (!updatedFlowData || typeof updatedFlowData !== 'object' || !updatedFlowData.name || !updatedFlowData.trigger || !Array.isArray(updatedFlowData.steps)) {
          return res.status(400).json({ success: false, message: 'Datos del flujo inválidos. Se requiere name, trigger y steps (array).' });
     }
 
-    const flowDocRef = firestoreDb.collection('action_flows').doc(flowId);
+    const flowDocRef = firestoreDb.collection('users').doc(userId).collection('action_flows').doc(flowId); // <-- CAMBIO DE RUTA FIRESTORE
+    const flowsCollectionRef = firestoreDb.collection('users').doc(userId).collection('action_flows'); // Para recargar
 
     try {
-        // Opcional: Verificar si existe
-        // const docSnap = await flowDocRef.get(); // get() cuesta una lectura
-        // if (!docSnap.exists) {
-        //      return res.status(404).json({ success: false, message: 'Flujo de acción no encontrado para actualizar.' });
-        // }
-
         const dataToUpdate = {
             ...updatedFlowData,
             id: flowId, // Asegurar ID
@@ -1208,70 +1258,69 @@ app.put('/action-flows/:flowId', async (req, res) => {
         };
         delete dataToUpdate.createdAt; // No sobreescribir createdAt
 
-        await flowDocRef.update(dataToUpdate);
-        console.log(`[Server] Flujo de acción actualizado en Firestore: ${flowId} - ${dataToUpdate.name}`);
+        await flowDocRef.update(dataToUpdate); // update fallará si el doc no existe
+        console.log(`[Server] Flujo de acción actualizado para ${userId} en Firestore: ${flowId} - ${dataToUpdate.name}`);
 
-        // Notificar a TODOS los workers activos
-        console.log(`[Server] Recargando y notificando flujos a todos los workers...`);
-        const allFlowsSnapshotUpdate = await firestoreDb.collection('action_flows').get();
-        const allFlowsDataUpdate = allFlowsSnapshotUpdate.docs.map(doc => doc.data());
-        // Optimization Note: Sending all flows to all workers on any change might be inefficient
-        // at scale. Consider sending only changed/new flows if performance becomes an issue.
-        Object.keys(workers).forEach(workerUserId => {
-             // <<< UPDATED: Notificar a todos los workers (CON PAYLOAD) >>>
-             notifyWorker(workerUserId, { type: 'COMMAND', command: 'RELOAD_FLOWS', payload: { flows: allFlowsDataUpdate } });
-        });
+        // Notificar al worker específico de este usuario
+        console.log(`[Server] Recargando y notificando flujos al worker ${userId}...`);
+        const userFlowsSnapshotUpdate = await flowsCollectionRef.get(); // <-- OBTENER SOLO FLUJOS DEL USUARIO
+        const userFlowsDataUpdate = userFlowsSnapshotUpdate.docs.map(doc => doc.data());
 
-        // Para devolver el objeto completo, necesitamos leerlo de nuevo o mergear localmente
-        // Merge local es más rápido pero no incluye el updatedAt real
-        // Leer de nuevo es más preciso pero más lento (otra lectura)
-        // Por ahora, merge local aproximado:
+        // Nuevo comando IPC específico
+        notifyWorker(userId, { type: 'RELOAD_USER_FLOWS', payload: { flows: userFlowsDataUpdate } }); // <-- NUEVO COMANDO Y PAYLOAD
+
+        // Merge local aproximado para respuesta
         const approxUpdatedData = { ...updatedFlowData, id: flowId, updatedAt: new Date().toISOString() };
         res.json({ success: true, message: 'Flujo de acción actualizado.', data: approxUpdatedData });
 
     } catch (err) {
-        console.error(`[Server][Firestore Error] Error actualizando flujo ${flowId}:`, err);
-        // Manejar error si el documento no existía (err.code === 5)
-        if (err.code === 5) {
+        console.error(`[Server][Firestore Error] Error actualizando flujo ${flowId} para ${userId}:`, err); // <-- ACTUALIZAR LOG
+        if (err.code === 5) { // Firestore NOT_FOUND
              return res.status(404).json({ success: false, message: 'Flujo de acción no encontrado para actualizar.' });
         }
         res.status(500).json({ success: false, message: 'Error interno al guardar el flujo actualizado.' });
     }
 });
 
-// DELETE /action-flows/:flowId - Eliminar un flujo
-app.delete('/action-flows/:flowId', async (req, res) => {
-    const flowId = req.params.flowId;
-    console.log(`[Server] DELETE /action-flows/${flowId}`);
-    const flowDocRef = firestoreDb.collection('action_flows').doc(flowId);
+// DELETE /users/:userId/action-flows/:flowId - Eliminar un flujo de un usuario
+app.delete('/users/:userId/action-flows/:flowId', async (req, res) => { // <-- CAMBIO DE RUTA
+    const { userId, flowId } = req.params; // <-- OBTENER userId Y flowId
+    console.log(`[Server] DELETE /users/${userId}/action-flows/${flowId}`);
+    const flowDocRef = firestoreDb.collection('users').doc(userId).collection('action_flows').doc(flowId); // <-- CAMBIO DE RUTA FIRESTORE
+    const flowsCollectionRef = firestoreDb.collection('users').doc(userId).collection('action_flows'); // Para recargar
 
     try {
-        // Opcional: Verificar si existe antes de borrar
+        // Verificar si existe antes de borrar
          const docSnap = await flowDocRef.get();
          if (!docSnap.exists) {
              return res.status(404).json({ success: false, message: 'Flujo de acción no encontrado para eliminar.' });
         }
 
         await flowDocRef.delete();
-        console.log(`[Server] Flujo de acción eliminado de Firestore: ${flowId}`);
+        console.log(`[Server] Flujo de acción eliminado de Firestore: ${flowId} para usuario ${userId}`);
 
-        // Notificar a TODOS los workers activos
-        console.log(`[Server] Recargando y notificando flujos a todos los workers...`);
-        const allFlowsSnapshotDelete = await firestoreDb.collection('action_flows').get();
-        const allFlowsDataDelete = allFlowsSnapshotDelete.docs.map(doc => doc.data());
-        // Optimization Note: Sending all flows to all workers on any change might be inefficient
-        // at scale. Consider sending only changed/new flows if performance becomes an issue.
-        Object.keys(workers).forEach(workerUserId => {
-             // <<< UPDATED: Notificar a todos los workers (CON PAYLOAD) >>>
-             notifyWorker(workerUserId, { type: 'COMMAND', command: 'RELOAD_FLOWS', payload: { flows: allFlowsDataDelete } });
-        });
+        // Notificar al worker específico de este usuario
+        console.log(`[Server] Recargando y notificando flujos al worker ${userId}...`);
+        const userFlowsSnapshotDelete = await flowsCollectionRef.get(); // <-- OBTENER SOLO FLUJOS DEL USUARIO
+        const userFlowsDataDelete = userFlowsSnapshotDelete.docs.map(doc => doc.data());
+
+        // Nuevo comando IPC específico
+        notifyWorker(userId, { type: 'RELOAD_USER_FLOWS', payload: { flows: userFlowsDataDelete } }); // <-- NUEVO COMANDO Y PAYLOAD
 
         res.json({ success: true, message: 'Flujo de acción eliminado.' });
     } catch (err) {
-        console.error(`[Server][Firestore Error] Error eliminando flujo ${flowId}:`, err);
+        console.error(`[Server][Firestore Error] Error eliminando flujo ${flowId} para ${userId}:`, err); // <-- ACTUALIZAR LOG
         res.status(500).json({ success: false, message: 'Error interno al eliminar el flujo.' });
     }
 });
+
+// Eliminar rutas globales antiguas si aún existen
+// app.get('/action-flows', ...); // ELIMINADO
+// app.post('/action-flows', ...); // ELIMINADO
+// app.get('/action-flows/:flowId', ...); // ELIMINADO
+// app.put('/action-flows/:flowId', ...); // ELIMINADO
+// app.delete('/action-flows/:flowId', ...); // ELIMINADO
+
 
 // --- FIN REFACTORIZACIÓN Firestore para Reglas, Starters, Flujos ---
 
@@ -1307,6 +1356,10 @@ app.post('/users/:userId/agents', async (req, res) => {
     // Validación básica de la estructura del agente
     if (!agentData || typeof agentData !== 'object' || !agentData.persona || !agentData.persona.name || !agentData.knowledge) {
         return res.status(400).json({ success: false, message: 'Datos del agente inválidos. Se requiere al menos persona.name y knowledge.' });
+    }
+    // Validar que knowledge sea un objeto (puede venir vacío)
+    if (typeof agentData.knowledge !== 'object' || agentData.knowledge === null) {
+        agentData.knowledge = {}; // Asegurar que sea un objeto si no lo es
     }
 
     const agentsCollectionRef = firestoreDb.collection('users').doc(userId).collection('agents');
@@ -1368,6 +1421,10 @@ app.put('/users/:userId/agents/:agentId', async (req, res) => {
     if (!updatedAgentData || typeof updatedAgentData !== 'object' || !updatedAgentData.persona || !updatedAgentData.persona.name || !updatedAgentData.knowledge) {
         return res.status(400).json({ success: false, message: 'Datos del agente inválidos para actualizar.' });
     }
+    // Validar que knowledge sea un objeto (puede venir vacío)
+    if (typeof updatedAgentData.knowledge !== 'object' || updatedAgentData.knowledge === null) {
+        updatedAgentData.knowledge = {}; // Asegurar que sea un objeto si no lo es
+    }
 
     const agentDocRef = firestoreDb.collection('users').doc(userId).collection('agents').doc(agentId);
 
@@ -1395,6 +1452,7 @@ app.put('/users/:userId/agents/:agentId', async (req, res) => {
             notifyWorker(userId, {
                 type: 'COMMAND',
                 command: 'RELOAD_AGENT_CONFIG',
+                // El payload ya contiene la config completa, incluyendo writingSampleTxt si existe
                 payload: { agentConfig: updatedAgentConfigData }
             });
         } else {
@@ -1459,7 +1517,8 @@ app.delete('/users/:userId/agents/:agentId', async (req, res) => {
 app.put('/users/:userId/active-agent', async (req, res) => {
     const userId = req.params.userId;
     const { agentId } = req.body; // Espera { "agentId": "some-agent-id" } o { "agentId": null }
-    console.log(`[Server] PUT /users/${userId}/active-agent - Estableciendo a: ${agentId}`);
+    // <<< ADDED LOG >>>
+    console.log(`[Server][SwitchAgent] PUT /users/${userId}/active-agent - Intentando establecer a: ${agentId}`);
 
     const userDocRef = firestoreDb.collection('users').doc(userId);
 
@@ -1470,12 +1529,15 @@ app.put('/users/:userId/active-agent', async (req, res) => {
         }
 
         // Verificar si el agentId proporcionado existe (si no es null)
+        let agentConfigPayload = null; // <<< MOVED DECLARATION EARLIER
         if (agentId) {
             const agentDocRef = userDocRef.collection('agents').doc(agentId);
             const agentDocSnap = await agentDocRef.get();
             if (!agentDocSnap.exists) {
                 return res.status(404).json({ success: false, message: `Agente con ID ${agentId} no encontrado para este usuario.` });
             }
+            // <<< OBTENER CONFIG PARA PAYLOAD >>>
+            agentConfigPayload = agentDocSnap.data();
         }
 
         // Actualizar el usuario
@@ -1483,25 +1545,18 @@ app.put('/users/:userId/active-agent', async (req, res) => {
             active_agent_id: agentId, // Establece null si agentId es null/undefined
             updatedAt: admin.firestore.FieldValue.serverTimestamp()
         });
-        console.log(`[Server] Agente activo para ${userId} actualizado a ${agentId || 'ninguno'}.`);
+        console.log(`[Server][SwitchAgent] Agente activo para ${userId} actualizado en Firestore a ${agentId || 'ninguno'}.`);
 
         // Notificar al worker activo para que cambie su configuración
-        let agentConfigPayload = null;
-        if (agentId) {
-            const agentDocRef = userDocRef.collection('agents').doc(agentId);
-            const agentDocSnap = await agentDocRef.get();
-            if (agentDocSnap.exists) {
-                agentConfigPayload = agentDocSnap.data();
-            }
-        }
-        console.log(` -> Notificando worker ${userId} para cambiar al agente ${agentId || 'default'} (config ${agentConfigPayload ? 'incluida' : 'no incluida'}).`);
+        // <<< ADDED LOG >>>
+        console.log(`[Server][SwitchAgent] Notificando worker ${userId} para cambiar al agente ${agentId || 'default'}. Payload config: ${agentConfigPayload ? JSON.stringify(agentConfigPayload).substring(0, 200)+'...' : 'null'}`); // Log truncado
         notifyWorker(userId, {
             type: 'SWITCH_AGENT',
+            // El payload ya contiene la config completa, incluyendo writingSampleTxt si existe
             payload: { agentId: agentId, agentConfig: agentConfigPayload } // Enviar ID y la config si existe
         });
 
         res.json({ success: true, message: `Agente activo establecido a ${agentId || 'ninguno'}.`, activeAgentId: agentId || null });
-
 
     } catch (err) {
         console.error(`[Server][Firestore Error] Error estableciendo agente activo para ${userId}:`, err);

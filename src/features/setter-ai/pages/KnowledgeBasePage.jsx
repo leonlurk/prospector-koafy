@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useContext } from 'react';
-import { useParams } from 'react-router-dom';
 import { updateAgent, getAgent } from '../services/api';
 import { AuthContext } from '../../../context/AuthContext';
+// Import the upload function
+import { uploadAgentFile } from '../../../firebaseConfig';
 // Remove custom component imports
 // import Card from '../components/Card';
 // import Button from '../components/Button';
@@ -109,21 +110,6 @@ const CollapsibleSection = ({ title, Icon, children }) => {
 };
 
 // --- Subcomponents using Tailwind/Standard HTML ---
-const InformationSection = ({ data, handleChange }) => (
-  <CollapsibleSection title="Información" Icon={InformationCircleIcon}>
-    <FormLabel htmlFor="info-text">Información para su agente</FormLabel>
-    <FormTextarea
-      id="info-text"
-      name="information"
-      rows={5}
-      placeholder="Resume la empresa, funciones de los productos, preguntas frecuentes de los clientes, pauta o servicios..."
-      value={data.information}
-      onChange={handleChange}
-      hint="Agregue información basada en texto para entrenar a su agente."
-    />
-  </CollapsibleSection>
-);
-
 const LinkSection = ({ data, handleChange }) => (
   <CollapsibleSection title="Enlace URL" Icon={LinkIcon}>
     <FormLabel htmlFor="link-url">Introducir una URL</FormLabel>
@@ -140,6 +126,7 @@ const LinkSection = ({ data, handleChange }) => (
   </CollapsibleSection>
 );
 
+// Restaurar FileUploadSection
 const FileUploadSection = ({ data, handleChange, handleFileChange }) => (
   <CollapsibleSection title="Archivo" Icon={DocumentArrowUpIcon}>
     <FormLabel htmlFor="file-upload">Subir Archivo</FormLabel>
@@ -159,62 +146,21 @@ const FileUploadSection = ({ data, handleChange, handleFileChange }) => (
     {/* Display selected file name if available */}
     {data.fileName && <p className="mt-2 text-sm text-gray-600">Archivo seleccionado: {data.fileName}</p>}
     
-    <div className="mt-4">
-        <FormLabel htmlFor="file-usage">¿Cómo debe su agente utilizar este archivo?</FormLabel>
-        <FormTextarea
-          id="file-usage"
-          name="fileUsage"
-          rows={2}
-          placeholder="Ej: Usar como fuente principal para responder preguntas sobre características del producto."
-          value={data.fileUsage}
-          onChange={handleChange}
-          hint="Describe cómo debe usar el archivo su agente."
-        />
-    </div>
+    <p className="mt-4 text-sm text-gray-600">Aclarar en prompt inicial el propósito de este archivo.</p>
   </CollapsibleSection>
 );
 
-const QandASection = ({ data, handleChange }) => (
-   <CollapsibleSection title="Preguntas y Respuestas" Icon={QuestionMarkCircleIcon}>
-    <FormLabel htmlFor="qa-question">Pregunta</FormLabel>
-     <FormTextarea
-      id="qa-question"
-      name="qaQuestion"
-      rows={2}
-      placeholder="Ej: ¿Cuál es el horario de atención?"
-      value={data.qaQuestion}
-      onChange={handleChange}
-      hint="Entrene a la IA con pares de preguntas y respuestas."
-    />
-    <div className="mt-4">
-        <FormLabel htmlFor="qa-answer">Respuesta</FormLabel>
-        <FormTextarea
-          id="qa-answer"
-          name="qaAnswer"
-          rows={4}
-          placeholder="Ej: Nuestro horario es de Lunes a Viernes de 9:00 a 18:00."
-          value={data.qaAnswer}
-          onChange={handleChange}
-        />
-    </div>
-   </CollapsibleSection>
-);
-
 // --- Main Page Component ---
-function KnowledgeBasePage() {
-  const { agentId } = useParams();
+function KnowledgeBasePage({ agentId, user }) {
   const { currentUser } = useContext(AuthContext);
-  const userId = currentUser?.uid;
+  const userId = user?.uid || currentUser?.uid;
 
   // Combine state for all sections
   const [knowledgeData, setKnowledgeData] = useState({
-      information: '',
       linkUrl: '',
       file: null,
       fileName: '',
-      fileUsage: '',
-      qaQuestion: '',
-      qaAnswer: ''
+      writingSampleTxt: '',
   });
   const [isSaving, setIsSaving] = useState(false);
   const [initialAgentData, setInitialAgentData] = useState(null);
@@ -222,25 +168,51 @@ function KnowledgeBasePage() {
   // --- Fetch existing knowledge data on component mount ---
   useEffect(() => {
     const fetchAgentKnowledge = async () => {
+      // Log para depurar userId y agentId
+      console.log("[KnowledgeBasePage][useEffect] Intentando cargar datos. userId:", userId, "agentId:", agentId);
       if (!userId || !agentId) return;
       try {
         const response = await getAgent(userId, agentId);
-        if (response.success && response.data?.knowledge) {
-          setInitialAgentData(response.data);
-          setKnowledgeData({
-            information: response.data.knowledge.information || '',
-            linkUrl: response.data.knowledge.urls?.[0] || '',
-            file: null,
-            fileName: response.data.knowledge.files?.[0]?.name || '',
-            fileUsage: response.data.knowledge.files?.[0]?.usage || '',
-            qaQuestion: response.data.knowledge.qandas?.[0]?.question || '',
-            qaAnswer: response.data.knowledge.qandas?.[0]?.answer || '',
-          });
+        // Log para ver la respuesta de la API
+        console.log("[KnowledgeBasePage][useEffect] Respuesta de getAgent:", response);
+        
+        // CORRECTED: Check response.data.data and response.data.data.knowledge
+        if (response.success && response.data?.data) { 
+            const agentData = response.data.data; // Extract actual agent data
+            setInitialAgentData(agentData); // Set the agent data object
+            // Log para ver los datos iniciales establecidos
+            console.log("[KnowledgeBasePage][useEffect] initialAgentData establecido:", agentData);
+          
+            // Check if knowledge exists before accessing its properties
+            if (agentData.knowledge) {
+                 setKnowledgeData({
+                     linkUrl: agentData.knowledge.urls?.[0] || '',
+                     file: null, // No cargamos el archivo en sí, solo metadatos
+                     fileName: agentData.knowledge.files?.[0]?.name || '',
+                     writingSampleTxt: agentData.knowledge.writingSampleTxt || '',
+                 });
+            } else {
+                console.log("[KnowledgeBasePage][useEffect] Agent data loaded, but knowledge property is missing or null.");
+                // Initialize with empty values if knowledge is missing
+                setKnowledgeData({
+                     linkUrl: '',
+                     file: null,
+                     fileName: '',
+                     writingSampleTxt: '',
+                });
+            }
         } else {
-          console.error("Failed to fetch agent knowledge:", response.message);
+             // Handle cases where response failed or data.data is missing
+            console.error("Failed to fetch or process agent data:", response.message || "Response did not contain expected data structure");
+            // Reset states if needed
+            setInitialAgentData(null);
+            setKnowledgeData({ linkUrl: '', file: null, fileName: '', writingSampleTxt: '' });
         }
       } catch (error) {
         console.error("Error fetching agent knowledge:", error);
+        // Reset states on catch
+        setInitialAgentData(null);
+        setKnowledgeData({ linkUrl: '', file: null, fileName: '', writingSampleTxt: '' });
       }
     };
     fetchAgentKnowledge();
@@ -248,21 +220,53 @@ function KnowledgeBasePage() {
 
   const handleChange = (e) => {
       const { name, value } = e.target;
-      setKnowledgeData(prev => ({ ...prev, [name]: value }));
+      setKnowledgeData(prevData => ({
+          ...prevData,
+          [name]: value
+      }));
   };
 
+  // Restaurar handleFileChange
   const handleFileChange = (e) => {
       const file = e.target.files[0];
       if (file) {
-          setKnowledgeData(prev => ({
-              ...prev,
-              file: file,
-              fileName: file.name
-            }));
+          // Leer contenido si es .txt
+          if (file.type === 'text/plain' || file.name.endsWith('.txt')) {
+              const reader = new FileReader();
+              reader.onload = (readEvent) => {
+                  setKnowledgeData(prevData => ({
+                      ...prevData,
+                      file: file,
+                      fileName: file.name,
+                      writingSampleTxt: readEvent.target.result // Guardar contenido del txt
+                  }));
+              };
+              reader.onerror = (error) => {
+                  console.error("Error reading file:", error);
+                  alert("Error al leer el archivo de texto.");
+                  setKnowledgeData(prevData => ({
+                      ...prevData,
+                      file: file, // Mantener archivo seleccionado aunque falle la lectura
+                      fileName: file.name,
+                      writingSampleTxt: '' // Limpiar contenido en error
+                  }));
+              }
+              reader.readAsText(file);
+          } else {
+              // Para otros tipos de archivo, solo guardar metadatos y limpiar contenido txt
+              setKnowledgeData(prevData => ({
+                  ...prevData,
+                  file: file,
+                  fileName: file.name,
+                  writingSampleTxt: '' // Limpiar si no es txt
+              }));
+          }
       }
   };
 
   const handleSave = async () => {
+    // Log para depurar los valores antes de la comprobación
+    console.log("[KnowledgeBasePage][handleSave] Intentando guardar. Valores: userId:", userId, "agentId:", agentId, "initialAgentData:", initialAgentData);
     if (!userId || !agentId || !initialAgentData) {
         alert("Error: No se pudo obtener la información del usuario o del agente.");
         return;
@@ -271,42 +275,70 @@ function KnowledgeBasePage() {
     console.log("Guardando base de conocimientos (Data):", knowledgeData);
 
     try {
+        let uploadedFileUrl = null;
+        let updatedFilesList = initialAgentData?.knowledge?.files || [];
+
+        // --- REAL File Upload Logic ---
+        if (knowledgeData.file) {
+            try {
+                 console.log(`[KnowledgeBasePage][handleSave] Starting file upload for: ${knowledgeData.fileName}`);
+                 uploadedFileUrl = await uploadAgentFile(userId, agentId, knowledgeData.file);
+                 console.log(`[KnowledgeBasePage][handleSave] File uploaded successfully. URL: ${uploadedFileUrl}`);
+                 // Replace existing file list with the new file
+                 updatedFilesList = [{
+                     name: knowledgeData.fileName,
+                     url: uploadedFileUrl,
+                     uploadedAt: new Date().toISOString() // Optional: Add timestamp
+                 }];
+            } catch (uploadError) {
+                console.error("[KnowledgeBasePage][handleSave] File upload failed:", uploadError);
+                alert(`Error al subir el archivo: ${uploadError.message}`);
+                setIsSaving(false); // Stop saving process
+                return; // Exit handleSave
+            }
+        } else if (!knowledgeData.fileName && initialAgentData?.knowledge?.files?.length > 0) {
+            // If fileName is cleared and there was a file before, remove it
+            // TODO: Consider deleting the file from Storage as well
+            console.log("[KnowledgeBasePage][handleSave] File name cleared, removing file from knowledge data.");
+            updatedFilesList = [];
+        }
+        // If fileName exists but file is null, it means the existing file wasn't changed
+        // No action needed for updatedFilesList in this case, it keeps the initial value
+
         const updatedKnowledge = {
-            information: knowledgeData.information || '',
             urls: knowledgeData.linkUrl ? [knowledgeData.linkUrl] : [],
-            qandas: (knowledgeData.qaQuestion && knowledgeData.qaAnswer)
-                ? [{ question: knowledgeData.qaQuestion, answer: knowledgeData.qaAnswer }]
-                : [],
-            files: initialAgentData.knowledge?.files || [],
+            files: updatedFilesList, // Use the potentially updated list
+            writingSampleTxt: knowledgeData.writingSampleTxt || '', // Ensure this is also updated
         };
 
-        if(knowledgeData.fileName && knowledgeData.fileUsage && updatedKnowledge.files.length > 0) {
-            const fileIndex = updatedKnowledge.files.findIndex(f => f.name === knowledgeData.fileName);
-            if(fileIndex !== -1) {
-                updatedKnowledge.files[fileIndex].usage = knowledgeData.fileUsage;
-            } else {
-                console.warn("File usage specified but file not found or upload not implemented");
-            }
-        }
-
+        // --- Update Agent Data --- 
         const agentDataToUpdate = {
             ...initialAgentData,
             knowledge: updatedKnowledge
         };
-        delete agentDataToUpdate.id;
+        // Remove the agent's own ID if it's present, as the API likely doesn't expect it for updates
+        delete agentDataToUpdate.id; 
+        // Also ensure other top-level read-only fields are removed if necessary (e.g., createdAt, updatedAt)
+        delete agentDataToUpdate.createdAt;
+        delete agentDataToUpdate.updatedAt;
 
+        console.log("[KnowledgeBasePage][handleSave] Calling updateAgent with data:", agentDataToUpdate);
         const response = await updateAgent(userId, agentId, agentDataToUpdate);
 
         if (response.success) {
             alert("Base de conocimientos actualizada correctamente.");
-            setInitialAgentData(prev => ({...prev, knowledge: updatedKnowledge}));
+            // Update local state to reflect the saved data (including the new file URL)
+            setInitialAgentData(prev => ({...prev, knowledge: updatedKnowledge})); 
+            // Clear the file input state after successful save/upload
+            setKnowledgeData(prev => ({...prev, file: null})); 
         } else {
             console.error("Error saving knowledge base:", response.message);
-            alert(`Error al guardar: ${response.message || 'Error desconocido'}`);
+            alert(`Error al guardar la base de conocimientos: ${response.message || 'Error desconocido'}`);
         }
 
     } catch (error) {
-        console.error("API call failed:", error);
+        // Catch errors from updateAgent API call or other unexpected issues
+        console.error("API call failed or other error during save:", error);
         alert(`Error de conexión al guardar: ${error.message}`);
     } finally {
         setIsSaving(false);
@@ -314,39 +346,38 @@ function KnowledgeBasePage() {
 };
 
   return (
-    <form onSubmit={(e) => { e.preventDefault(); handleSave(); }}>
-       <h2 className="text-xl font-semibold text-gray-800 mb-1">Base de Conocimientos</h2>
-       <p className="text-sm text-gray-500 mb-6">Entrene a su agente para que ofrezca respuestas contextualizadas que aseguren respuestas precisas.</p>
+    <div className="max-w-4xl mx-auto py-8 px-4 sm:px-6 lg:px-8">
+      <h1 className="text-3xl font-bold text-gray-900 mb-6">Base de Conocimientos del Agente</h1>
+      <form onSubmit={(e) => e.preventDefault()} className="space-y-6">
+        {/* Container for sections, adjusted background/border */}
+        <div className="bg-white shadow rounded-lg overflow-hidden">
+            <LinkSection data={knowledgeData} handleChange={handleChange} />
+            {/* Restaurar uso de FileUploadSection */}
+             <FileUploadSection 
+                 data={knowledgeData} 
+                 handleChange={handleChange} 
+                 handleFileChange={handleFileChange} 
+             />
+        </div>
 
-       <div className="bg-white rounded-lg shadow-sm border border-gray-200 divide-y divide-gray-200">
-           <InformationSection data={knowledgeData} handleChange={handleChange} />
-           <LinkSection data={knowledgeData} handleChange={handleChange} />
-           <FileUploadSection data={knowledgeData} handleChange={handleChange} handleFileChange={handleFileChange} />
-           <QandASection data={knowledgeData} handleChange={handleChange} />
-       </div>
-
-       <div className="mt-8 flex justify-end">
-           <button
-             type="submit"
-             disabled={isSaving}
-             className={`inline-flex items-center px-6 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white ${
-               isSaving ? 'bg-indigo-400 cursor-not-allowed' : 'bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500'
-             }`}
-           >
-             {isSaving ? (
-                <>
-                 <ArrowPathIcon className="-ml-1 mr-2 h-5 w-5 animate-spin" />
-                 Guardando...
-                </>
-             ) : (
-                <>
-                 <ArrowPathIcon className="-ml-1 mr-2 h-5 w-5" />
-                 Guardar Cambios
-                </>
-             )}
-           </button>
-       </div>
-    </form>
+        {/* Save Button */}
+        <div className="flex justify-end pt-5"> 
+            <button 
+                type="button" 
+                onClick={handleSave} 
+                disabled={isSaving}
+                className={`inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 ${isSaving ? 'opacity-50 cursor-not-allowed' : ''}`}
+            >
+                 {isSaving ? (
+                    <ArrowPathIcon className="animate-spin -ml-1 mr-2 h-5 w-5 text-white" />
+                 ) : (
+                    <ArrowPathIcon className="-ml-1 mr-2 h-5 w-5" /> // Keep consistent icon placement
+                 )}
+                {isSaving ? 'Guardando...' : 'Guardar Cambios'}
+            </button>
+        </div>
+      </form>
+    </div>
   );
 }
 

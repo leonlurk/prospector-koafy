@@ -19,6 +19,7 @@ import { updateCampaign } from "./campaignStore";
 import { instagramApi } from "./instagramApi";
 import logApiRequest from "./requestLogger";
 import { getLatestProcessingCampaign, getOldestScheduledCampaign, activateCampaign, checkAndActivateNextScheduled } from "./campaignStore";
+import { useWhatsApp } from "./features/setter-ai/context/WhatsAppContext"; // Import useWhatsApp
 
 // --- Import Setter AI Pages --- 
 import SetterDashboardPage from "./features/setter-ai/pages/DashboardPage"; 
@@ -126,23 +127,28 @@ const Dashboard = () => {
   const [isLoadingCampaigns, setIsLoadingCampaigns] = useState(true);
   const [currentlyProcessingCampaignId, setCurrentlyProcessingCampaignId] = useState(null);
 
+  // Get the registration function from the context
+  const { registerRedirectCallback } = useWhatsApp();
+
   // Determine the current tool context
   const currentToolContext = getToolContext(selectedOption);
 
-  // Notificación simple
-  const showNotificationFunc = (message, type = "info") => {
+  // Notificación simple - Wrap with useCallback
+  const showNotificationFunc = useCallback((message, type = "info") => {
     setNotification({ show: true, message, type });
     setTimeout(() => {
       setNotification({ show: false, message: "", type: "" });
     }, 3000);
-  };
+    // Dependency: setNotification is stable
+  }, [setNotification]); 
 
   // Function to trigger campaign list refresh
   const triggerCampaignsRefresh = () => {
     setCampaignListVersion(prevVersion => prevVersion + 1);
   };
 
-  const handleSidebarOptionChange = (option) => {
+  // Wrap handleSidebarOptionChange with useCallback
+  const handleSidebarOptionChange = useCallback((option) => {
     // Save the selected option to localStorage
     localStorage.setItem('lastSelectedOption', option);
 
@@ -161,7 +167,8 @@ const Dashboard = () => {
       setSelectedOption(option);
       setShowSidebar(false);
     }
-  };
+    // Add dependencies used inside the function
+  }, [isInstagramConnected, setIsNewCampaignModalOpen, setShowSidebar, showNotificationFunc, setSelectedOption]); 
 
   // Function to navigate specifically to the Campaigns tab
   const navigateToCampaigns = () => {
@@ -499,6 +506,20 @@ const Dashboard = () => {
   // Dependencies: Add currentlyProcessingCampaignId if state updates within loop affect next run
   }, [user, processingScheduled, currentlyProcessingCampaignId]); 
 
+  // Effect to register the redirect callback on mount
+  useEffect(() => {
+    if (registerRedirectCallback) {
+      // Define the function to be called on redirect
+      const performRedirect = () => {
+        console.log("[Dashboard] WhatsApp connected redirect triggered. Navigating to SetterAgents...");
+        handleSidebarOptionChange("SetterAgents"); 
+      };
+      registerRedirectCallback(performRedirect);
+    }
+    // Cleanup function could potentially unregister if needed, but might not be necessary
+    // return () => { registerRedirectCallback(null); };
+  }, [registerRedirectCallback, handleSidebarOptionChange]); // Now handleSidebarOptionChange should be stable
+
   // --- useEffect for Real-time Campaign Listener --- 
   useEffect(() => {
     if (!user?.uid) {
@@ -763,7 +784,7 @@ const Dashboard = () => {
         case 'Estadísticas': // Manejado abajo por optionType? Revisar
              return <StatisticsDashboard user={user} />;
         case 'CRMWhatsApp': // Nuevo caso para CRM WhatsApp
-            return <WhatsAppCRM user={user} />; // Componente real de CRM WhatsApp
+            return <WhatsAppCRM user={user} setSelectedOption={handleSidebarOptionChange} />; // Pass the function here
         // Añadir otros casos directos si son necesarios ('Nueva Campaña', 'Send Media'?) 
         // Nota: 'Nueva Campaña' y 'Send Media' parecen manejarse abriendo modales, no cambiando la vista principal directamente.
         
@@ -815,7 +836,7 @@ const Dashboard = () => {
         case 'SetterSettings': 
              return <div>Página de Configuración</div>;        
         case 'WhatsApp': // Caso antiguo 'whatsapp'
-            return <WhatsAppPage />;
+            return <WhatsAppPage setSelectedOption={handleSidebarOptionChange} />; // Pass the function here
         
         default:
              // Si ni el nombre directo ni el tipo coincidieron

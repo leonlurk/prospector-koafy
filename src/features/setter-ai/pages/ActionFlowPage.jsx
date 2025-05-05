@@ -97,9 +97,10 @@ const FlowMetadataForm = React.memo(({ name, description, trigger, triggerValue,
 
 // --- Action Flow Page Component ---
 function ActionFlowPage() {
-  console.log("[ActionFlowPage] Rendering component");
-  
   const { currentUser, whatsappStatus } = useWhatsApp();
+  const userId = currentUser?.uid;
+  console.log('[ActionFlowPage] Rendering. userId:', userId, 'currentUser:', currentUser);
+
   const [flows, setFlows] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -123,19 +124,28 @@ function ActionFlowPage() {
   }));
 
   useEffect(() => {
-    fetchFlows();
-  }, []);
+    console.log('[ActionFlowPage] useEffect triggered. userId:', userId);
+    if (userId) {
+      fetchFlows();
+    } else {
+      console.log('[ActionFlowPage] useEffect: userId is missing, setting error.');
+      setError('No se ha podido identificar al usuario para cargar los flujos.');
+      setIsLoading(false);
+    }
+  }, [userId]);
 
   const fetchFlows = async () => {
+    if (!userId) return;
+    console.log('[ActionFlowPage] fetchFlows called FOR userId:', userId, '. Clearing error.');
     setIsLoading(true);
     setError(null);
 
     try {
-      const response = await getActionFlows();
-      if (response.success && response.data && response.data.success) {
-        setFlows(response.data.data || []);
+      const response = await getActionFlows(userId);
+      if (response.success && response.data) {
+        setFlows(response.data || []);
       } else {
-        setError(response.data?.message || response.message || 'Error cargando flujos');
+        setError(response.message || 'Error cargando flujos');
       }
     } catch (err) {
       setError(err.message || 'Error cargando flujos');
@@ -146,13 +156,17 @@ function ActionFlowPage() {
 
   const handleCreateFlow = async (e) => {
     e.preventDefault();
+    if (!userId) {
+      setError('No se puede crear el flujo sin un ID de usuario.');
+      return;
+    }
     setIsLoading(true);
     setError(null);
 
-    console.log("Enviando datos a createActionFlow:", newFlowData);
+    console.log(`Enviando datos a createActionFlow para usuario ${userId}:`, newFlowData);
 
     try {
-      const response = await createActionFlow(newFlowData);
+      const response = await createActionFlow(userId, newFlowData);
       if (response.success) {
         await fetchFlows();
         setShowNewFlowForm(false);
@@ -182,11 +196,15 @@ function ActionFlowPage() {
 
   const handleUpdateFlow = async (e, flowId) => {
     e.preventDefault();
+    if (!userId || !flowId || !selectedFlow) {
+       setError('Faltan datos para actualizar el flujo (userId, flowId o datos del flujo).');
+      return;
+    }
     setIsLoading(true);
     setError(null);
 
     try {
-      const response = await updateActionFlow(flowId, selectedFlow);
+      const response = await updateActionFlow(userId, flowId, selectedFlow);
       if (response.success) {
         await fetchFlows();
         setSelectedFlow(null);
@@ -201,6 +219,10 @@ function ActionFlowPage() {
   };
 
   const handleDeleteFlow = async (flowId) => {
+    if (!userId || !flowId) {
+      setError('Faltan datos para eliminar el flujo (userId o flowId).');
+      return;
+    }
     if (!window.confirm('¿Estás seguro de que deseas eliminar este flujo?')) {
       return;
     }
@@ -209,7 +231,7 @@ function ActionFlowPage() {
     setError(null);
 
     try {
-      const response = await deleteActionFlow(flowId);
+      const response = await deleteActionFlow(userId, flowId);
       if (response.success) {
         await fetchFlows();
         setSelectedFlow(null);

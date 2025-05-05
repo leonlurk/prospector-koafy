@@ -366,11 +366,12 @@ export const getAgentPublishInfo = async (agentId) => {
 };
 
 // --- Action Flows ---
-export const getActionFlows = async () => {
+export const getActionFlows = async (userId) => {
+  if (!userId) return { success: false, message: 'User ID es requerido para obtener flujos.' };
   try {
     const response = await axios({
       ...createFetchOptions('GET'),
-      url: `${API_BASE_URL}/action-flows`
+      url: `${API_BASE_URL}/users/${userId}/action-flows`
     });
     return handleResponse(response);
   } catch (error) {
@@ -378,11 +379,12 @@ export const getActionFlows = async () => {
   }
 };
 
-export const getActionFlow = async (flowId) => {
+export const getActionFlow = async (userId, flowId) => {
+  if (!userId) return { success: false, message: 'User ID es requerido para obtener un flujo.' };
   try {
     const response = await axios({
       ...createFetchOptions('GET'),
-      url: `${API_BASE_URL}/action-flows/${flowId}`
+      url: `${API_BASE_URL}/users/${userId}/action-flows/${flowId}`
     });
     return handleResponse(response);
   } catch (error) {
@@ -390,11 +392,12 @@ export const getActionFlow = async (flowId) => {
   }
 };
 
-export const createActionFlow = async (flowData) => {
+export const createActionFlow = async (userId, flowData) => {
+  if (!userId) return { success: false, message: 'User ID es requerido para crear un flujo.' };
   try {
     const response = await axios({
       ...createFetchOptions('POST', flowData),
-      url: `${API_BASE_URL}/action-flows`
+      url: `${API_BASE_URL}/users/${userId}/action-flows`
     });
     return handleResponse(response);
   } catch (error) {
@@ -402,11 +405,12 @@ export const createActionFlow = async (flowData) => {
   }
 };
 
-export const updateActionFlow = async (flowId, flowData) => {
+export const updateActionFlow = async (userId, flowId, flowData) => {
+  if (!userId) return { success: false, message: 'User ID es requerido para actualizar un flujo.' };
   try {
     const response = await axios({
       ...createFetchOptions('PUT', flowData),
-      url: `${API_BASE_URL}/action-flows/${flowId}`
+      url: `${API_BASE_URL}/users/${userId}/action-flows/${flowId}`
     });
     return handleResponse(response);
   } catch (error) {
@@ -414,11 +418,12 @@ export const updateActionFlow = async (flowId, flowData) => {
   }
 };
 
-export const deleteActionFlow = async (flowId) => {
+export const deleteActionFlow = async (userId, flowId) => {
+  if (!userId) return { success: false, message: 'User ID es requerido para eliminar un flujo.' };
   try {
     const response = await axios({
       ...createFetchOptions('DELETE'),
-      url: `${API_BASE_URL}/action-flows/${flowId}`
+      url: `${API_BASE_URL}/users/${userId}/action-flows/${flowId}`
     });
     return handleResponse(response);
   } catch (error) {
