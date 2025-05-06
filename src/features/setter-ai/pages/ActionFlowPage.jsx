@@ -142,13 +142,21 @@ function ActionFlowPage() {
 
     try {
       const response = await getActionFlows(userId);
+      console.log('[ActionFlowPage][fetchFlows] Raw response from getActionFlows:', response);
+      
       if (response.success && response.data) {
-        setFlows(response.data || []);
+        const flowsData = response.data || [];
+        console.log('[ActionFlowPage][fetchFlows] Data being set to flows state:', flowsData);
+        setFlows(flowsData);
       } else {
+        console.error('[ActionFlowPage][fetchFlows] API call failed or returned no data:', response);
         setError(response.message || 'Error cargando flujos');
+        setFlows([]);
       }
     } catch (err) {
+      console.error('[ActionFlowPage][fetchFlows] Error caught:', err);
       setError(err.message || 'Error cargando flujos');
+      setFlows([]);
     } finally {
       setIsLoading(false);
     }
@@ -475,6 +483,7 @@ function ActionFlowPage() {
         ) : flows.length > 0 ? (
             <div className="bg-white shadow overflow-hidden sm:rounded-md">
                  <ul role="list" className="divide-y divide-gray-200">
+                    {console.log('[ActionFlowPage] Rendering list with flows state:', flows)}
                     {flows.map((flow) => (
                         <li key={flow.id} className="px-4 py-4 sm:px-6 hover:bg-gray-50">
                            <div className="flex items-center justify-between">

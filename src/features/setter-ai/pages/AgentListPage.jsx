@@ -1,8 +1,11 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useWhatsApp } from '../context/WhatsAppContext';
 import { getAgents, createAgent, setActiveAgent, getActiveAgent } from '../services/api';
+import { doc, deleteDoc } from "firebase/firestore";
+import { db } from '../../../firebaseConfig';
 import OptionCard from '../components/OptionCard';
 import agentImageUrl from '../assets/agent.png';
+import { FaTrash } from 'react-icons/fa';
 
 // --- Placeholder Icons --- 
 const SearchIcon = (props) => (
@@ -171,6 +174,7 @@ function AgentListPage({ setSelectedOption }) {
   const [error, setError] = useState(null);
   const [activeAgentId, setActiveAgentId] = useState(null);
   const [activatingAgentId, setActivatingAgentId] = useState(null);
+  const [deletingAgentId, setDeletingAgentId] = useState(null);
   
   // State to control view toggle
   const [showInitialCreationView, setShowInitialCreationView] = useState(false);
@@ -251,55 +255,124 @@ Error agentes: ${agentsResponse.data?.message || agentsResponse.message}` : `Err
     console.log('[handleCreationOptionClick] Clicked! Option:', optionType, 'Template:', templateKey);
     console.log('[handleCreationOptionClick] Checking typeof setSelectedOption before call:', typeof setSelectedOption);
 
-    if (!currentUser?.uid || isCreatingAgent) return;
-
-    setIsCreatingAgent(true);
-    setError(null); 
+    if (!currentUser?.uid) {
+      setError("Usuario no autenticado.");
+      return;
+    }
+    if (typeof setSelectedOption !== 'function') {
+      console.error('[handleCreationOptionClick] Error: setSelectedOption is not a function!');
+      setError('Error interno al intentar cambiar la vista.');
+      return;
+    }
 
     if (optionType === 'scratch') {
-      console.log("[handleCreationOptionClick] Navigating to agent description setup view...");
-      if (typeof setSelectedOption === 'function') {
-          setSelectedOption('SetterAgentDescriptionSetup'); 
+      setIsCreatingAgent(true);
+      setError(null);
+
+      try {
+        console.log("[handleCreationOptionClick] Creating agent from scratch...");
+        const payload = {
+          type: 'scratch',
+          persona: {
+            name: 'Nuevo Agente (desde cero)'
+          },
+          knowledge: {}
+        };
+        console.log("[handleCreationOptionClick] Payload for scratch agent:", payload);
+        const response = await createAgent(currentUser.uid, payload);
+
+        if (response?.success && response.agentId) {
+          console.log(`[handleCreationOptionClick] Agent created from scratch, ID: ${response.agentId}. Setting selectedOption to detail view...`);
+          setSelectedOption(`SetterAgentDetail_persona_${response.agentId}`); 
+          setShowInitialCreationView(false);
       } else {
-          console.error("[handleCreationOptionClick] setSelectedOption is NOT a function!");
-      }
+          console.error("[handleCreationOptionClick] Error creating agent from scratch:", response?.message);
+          setError(response?.message || "Error al crear agente desde cero.");
+        }
+      } catch (error) {
+        console.error("[handleCreationOptionClick] Exception creating agent from scratch:", error);
+        setError(error.message || "Error excepcional al crear agente desde cero.");
+      } finally {
       setIsCreatingAgent(false); 
-
-    } else if (optionType === 'template' && templateKey && agentTemplates[templateKey]) {
+      }
+    } else if (optionType === 'template' && templateKey) {
+      setIsCreatingAgent(true);
+      setError(null);
       const templateData = agentTemplates[templateKey];
-      console.log(`[handleCreationOptionClick] Intentando crear desde plantilla: ${templateKey}`);
-      console.log('[handleCreationOptionClick] Datos a enviar (plantilla):', JSON.stringify(templateData, null, 2)); 
-
-      if (!templateData.persona?.name || typeof templateData.knowledge === 'undefined') {
-          console.error("[handleCreationOptionClick] Error: Datos de plantilla incompletos antes de enviar.", templateData);
-          setError(`Datos incompletos en la plantilla '${templateKey}'.`);
+      if (!templateData) {
+        setError(`Plantilla '${templateKey}' no encontrada.`);
           setIsCreatingAgent(false);
           return;
       }
 
       try {
-        const response = await createAgent(currentUser.uid, templateData); 
-          if (response.success && response.data?.success && response.data.data?.id) {
-              const newAgentId = response.data.data.id;
-          console.log('[handleCreationOptionClick] Template created, calling setSelectedOption. Type:', typeof setSelectedOption);
-          if (typeof setSelectedOption === 'function') {
-              setSelectedOption(`SetterAgentDetail_Persona_${newAgentId}`);
-          } else {
-             console.error("[handleCreationOptionClick] setSelectedOption is NOT a function here either!");
-          }
+        const payload = {
+          type: 'template',
+          name: templateData.persona.name || `Agente desde plantilla ${templateKey}`,
+          persona: templateData.persona,
+        };
+        console.log("[handleCreationOptionClick] Creating agent from template with payload:", payload);
+        const response = await createAgent(currentUser.uid, payload);
+
+        if (response?.success && response.agentId) {
+          console.log(`[handleCreationOptionClick] Agent created from template, ID: ${response.agentId}. Setting selectedOption to detail view...`);
+          setSelectedOption(`SetterAgentDetail_persona_${response.agentId}`); 
+          setShowInitialCreationView(false);
         } else {
-          setError(response.data?.message || response.message || `Error al crear agente desde plantilla ${templateKey}`);
+          console.error("[handleCreationOptionClick] Error creating agent from template:", response?.message);
+          setError(response?.message || "Error al crear agente desde plantilla.");
         }
       } catch (error) {
-        setError(error.message || `Error de red al crear desde plantilla ${templateKey}`);
+        console.error("[handleCreationOptionClick] Exception creating agent from template:", error);
+        setError(error.message || "Error excepcional al crear agente desde plantilla.");
       } finally {
         setIsCreatingAgent(false);
       }
     } else {
-         console.warn("Opción de creación no válida o faltan datos:", optionType, templateKey);
-         setIsCreatingAgent(false); 
+      console.warn('[handleCreationOptionClick] Unknown optionType or missing templateKey:', optionType, templateKey);
     }
-  }, [currentUser, isCreatingAgent, setSelectedOption]);
+  }, [currentUser, setSelectedOption]);
+
+  // --- NEW: Handle Agent Deletion ---
+  const handleDeleteAgent = async (agentIdToDelete, agentName) => {
+      if (!currentUser?.uid || !agentIdToDelete) return;
+
+      // Confirmation dialog
+      const confirmDelete = window.confirm(`¿Estás seguro de que quieres eliminar al agente "${agentName || 'este agente'}"? Esta acción no se puede deshacer.`);
+      
+      if (!confirmDelete) {
+          return; // User cancelled
+      }
+
+      setDeletingAgentId(agentIdToDelete);
+      setError(null);
+
+      try {
+          // Assuming agents are stored under users/{userId}/agents/{agentId}
+          // Adjust the path if your Firestore structure is different (e.g., just 'agents/{agentId}')
+          const agentRef = doc(db, "users", currentUser.uid, "agents", agentIdToDelete); 
+          await deleteDoc(agentRef);
+          
+          // Update local state to remove the agent
+          setAgents(prevAgents => prevAgents.filter(agent => agent.id !== agentIdToDelete));
+          
+          // If the deleted agent was the active one, reset activeAgentId
+          if (activeAgentId === agentIdToDelete) {
+              setActiveAgentId(null);
+              // Optionally, call an API to clear the active agent in the backend if necessary
+              // await clearActiveAgent(currentUser.uid); 
+          }
+
+          console.log(`Agente ${agentIdToDelete} eliminado correctamente.`);
+
+      } catch (err) {
+          console.error("Error eliminando agente:", err);
+          setError(err.message || "Error de red al eliminar el agente");
+      } finally {
+          setDeletingAgentId(null);
+      }
+  };
+  // ---------------------------------
 
   const filteredAgents = agents.filter(agent => 
     (agent.persona?.name?.toLowerCase() || '').includes(searchTerm.toLowerCase()) ||
@@ -355,11 +428,12 @@ Error agentes: ${agentsResponse.data?.message || agentsResponse.message}` : `Err
          {filteredAgents.map((agent) => {
               const isActive = agent.id === activeAgentId;
               const isActivating = agent.id === activatingAgentId;
+              const isDeleting = agent.id === deletingAgentId;
               return (
-                <div key={agent.id} className="bg-white rounded-xl shadow-md p-5 hover:shadow-lg transition duration-200 flex items-center justify-between space-x-4">
+                <div key={agent.id} className={`bg-white rounded-xl shadow-md p-5 hover:shadow-lg transition duration-200 flex items-center justify-between space-x-4 ${isDeleting ? 'opacity-50' : ''}`}>
                   <div 
-                    onClick={() => setSelectedOption(`SetterAgentDetail_Persona_${agent.id}`)} 
-                    className="flex items-center space-x-4 flex-grow cursor-pointer group"
+                    onClick={() => !isDeleting && setSelectedOption(`SetterAgentDetail_Persona_${agent.id}`)}
+                    className={`flex items-center space-x-4 flex-grow group ${isDeleting ? 'cursor-not-allowed' : 'cursor-pointer'}`}
                   >
                     <div className="relative shrink-0">
                       <img 
@@ -386,9 +460,9 @@ Error agentes: ${agentsResponse.data?.message || agentsResponse.message}` : `Err
                      ) : (
                          <button 
                            onClick={() => handleActivateAgent(agent.id)}
-                           disabled={isActivating}
+                           disabled={isActivating || isDeleting}
                            className={`inline-flex items-center justify-center px-3 py-1.5 border border-transparent text-xs font-medium rounded-md shadow-sm text-white transition duration-150 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 ${
-                               isActivating 
+                               (isActivating || isDeleting) 
                                  ? 'bg-gray-400 cursor-not-allowed' 
                                  : 'bg-indigo-600 hover:bg-indigo-700'
                            }`}
@@ -408,11 +482,25 @@ Error agentes: ${agentsResponse.data?.message || agentsResponse.message}` : `Err
                      )}
                      <button 
                          onClick={() => setSelectedOption(`SetterAgentDetail_Persona_${agent.id}`)}
-                         className="text-gray-400 hover:text-indigo-600 p-2 rounded-full transition duration-150"
+                         disabled={isDeleting}
+                         className="text-gray-400 hover:text-indigo-600 p-2 rounded-full transition duration-150 disabled:opacity-50 disabled:cursor-not-allowed"
                          aria-label="Configurar Agente"
                          title="Configurar Agente"
                      >
                          <AdjustmentsHorizontalIcon className="w-6 h-6" />
+                     </button>
+                     <button 
+                         onClick={() => handleDeleteAgent(agent.id, agent.persona?.name)}
+                         disabled={isActivating || isDeleting || isActive}
+                         className={`text-gray-400 hover:text-red-600 p-2 rounded-full transition duration-150 disabled:opacity-50 disabled:cursor-not-allowed ${isActive ? 'hidden' : ''}`}
+                         aria-label="Eliminar Agente"
+                         title="Eliminar Agente"
+                     >
+                         {isDeleting ? (
+                            <ArrowPathIcon className="animate-spin w-5 h-5 text-red-500" />
+                         ) : (
+                            <FaTrash className="w-5 h-5" />
+                         )}
                      </button>
                   </div>
                 </div>

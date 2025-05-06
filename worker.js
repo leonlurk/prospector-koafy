@@ -1306,6 +1306,8 @@ async function isUserActiveInChat(userId, senderId) {
     const chatDocRef = firestoreDbWorker.collection('users').doc(userId).collection('chats').doc(senderId);
     try {
         // 1. Verificar flag explícito de actividad en el documento de chat
+        // This check remains, but its effectiveness depends on how `userIsActive` is set.
+        // It's primarily set when a human message is detected.
         const chatDoc = await chatDocRef.get();
         if (chatDoc.exists && chatDoc.data().userIsActive === true) {
             // Verificar si la actividad es reciente usando diferencia relativa
@@ -1315,15 +1317,16 @@ async function isUserActiveInChat(userId, senderId) {
                 const lastActivityMs = lastHumanTimestamp.getTime();
                 const diffMinutes = (nowMs - lastActivityMs) / (1000 * 60);
 
-                console.log(`[Worker ${userId}][PRESENCE v3] Último mensaje humano: ${lastHumanTimestamp.toISOString()}`);
+                console.log(`[Worker ${userId}][PRESENCE v3] Último mensaje humano (cacheado en chat doc): ${lastHumanTimestamp.toISOString()}`);
                 console.log(`[Worker ${userId}][PRESENCE v3] Tiempo transcurrido: ${diffMinutes.toFixed(2)} minutos`);
                 if (diffMinutes < 10) {
-                    console.log(`[Worker ${userId}][PRESENCE v3] ✅ Usuario ACTIVO (< 10 minutos)`);
+                    console.log(`[Worker ${userId}][PRESENCE v3] ✅ Usuario ACTIVO (< 10 minutos según cache)`);
                     return true;
                 }
-                console.log(`[Worker ${userId}][PRESENCE v3] ⚠️ Mensaje humano encontrado pero demasiado antiguo (${diffMinutes.toFixed(2)} min > 10 min)`);
+                console.log(`[Worker ${userId}][PRESENCE v3] ⚠️ Mensaje humano cacheado pero demasiado antiguo (${diffMinutes.toFixed(2)} min > 10 min)`);
             } else {
-                console.log(`[Worker ${userId}][PRESENCE v3] ⚠️ Flag userIsActive=true pero sin timestamp de actividad`);
+                console.log(`[Worker ${userId}][PRESENCE v3] ⚠️ Flag userIsActive=true pero sin timestamp de actividad cacheado.`);
+                // Fall through to check the messages collection directly
             }
         }
 
@@ -1332,6 +1335,7 @@ async function isUserActiveInChat(userId, senderId) {
         const humanMessagesRef = chatDocRef.collection('messages_human');
         const recentHumanMessages = await humanMessagesRef
             .where('timestamp', '>', tenMinutesAgo)
+            .orderBy('timestamp', 'desc') // Get the most recent first
             .limit(1)
             .get();
 
@@ -1347,11 +1351,11 @@ async function isUserActiveInChat(userId, senderId) {
                 console.log(`[Worker ${userId}][PRESENCE v3] Mensaje encontrado en messages_human: ${msgTimestamp.toISOString()}`);
                 console.log(`[Worker ${userId}][PRESENCE v3] Tiempo transcurrido: ${diffMinutes.toFixed(2)} minutos`);
                 if (diffMinutes < 10) {
-                    console.log(`[Worker ${userId}][PRESENCE v3] ✅ Usuario ACTIVO (mensaje < 10 minutos)`);
-                    // Actualizar estado de actividad
+                    console.log(`[Worker ${userId}][PRESENCE v3] ✅ Usuario ACTIVO (mensaje humano < 10 minutos)`);
+                    // Actualizar estado de actividad en el chat doc
                     await chatDocRef.set({
                         userIsActive: true,
-                        lastHumanMessageTimestamp: lastMsg.timestamp,
+                        lastHumanMessageTimestamp: lastMsg.timestamp, // Use the timestamp from the found message
                         lastActivityCheck: admin.firestore.FieldValue.serverTimestamp()
                     }, { merge: true });
                     return true;
@@ -1362,37 +1366,9 @@ async function isUserActiveInChat(userId, senderId) {
             console.log(`[Worker ${userId}][PRESENCE v3] No se encontraron mensajes humanos recientes en messages_human`);
         }
 
-        // 3. Verificar mensajes recientes del contacto/tercero como último criterio
-        console.log(`[Worker ${userId}][PRESENCE v3] Verificando mensajes recientes del contacto...`);
-        const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000); // Ventana más corta para mensajes del contacto
-        const contactMessagesRef = chatDocRef.collection('messages_contact');
-        const recentContactMessages = await contactMessagesRef
-            .where('timestamp', '>', fiveMinutesAgo)
-            .limit(1)
-            .get();
-
-        if (!recentContactMessages.empty) {
-            const lastMsg = recentContactMessages.docs[0].data();
-            const msgTimestamp = lastMsg.timestamp?.toDate();
-
-            if (msgTimestamp) {
-                const nowMs = Date.now();
-                const msgMs = msgTimestamp.getTime();
-                const diffMinutes = (nowMs - msgMs) / (1000 * 60);
-
-                console.log(`[Worker ${userId}][PRESENCE v3] Mensaje reciente del contacto: ${msgTimestamp.toISOString()}`);
-                console.log(`[Worker ${userId}][PRESENCE v3] Tiempo transcurrido: ${diffMinutes.toFixed(2)} minutos`);
-                if (diffMinutes < 5) {
-                    console.log(`[Worker ${userId}][PRESENCE v3] ✅ Usuario considerado ACTIVO porque el contacto envió mensaje hace menos de 5 minutos`);
-                    // No actualizar userIsActive basado en actividad del contacto, solo considerarlo activo para esta evaluación
-                    return true;
-                }
-            }
-        }
-
-        // No se encontró actividad humana reciente
-        console.log(`[Worker ${userId}][PRESENCE v3] ⚠️ Usuario INACTIVO (sin actividad reciente)`);
-        // Actualizar estado de inactividad
+        // Si llegamos aquí, no se encontró actividad humana reciente
+        console.log(`[Worker ${userId}][PRESENCE v3] ⚠️ Usuario INACTIVO (sin actividad humana reciente)`);
+        // Actualizar estado de inactividad en el chat doc
         await chatDocRef.set({
             userIsActive: false,
             lastActivityCheck: admin.firestore.FieldValue.serverTimestamp()
@@ -1835,13 +1811,17 @@ async function downloadFileContent(url, userId) { // Added userId for logging
 
 // --- v4 --- (Con historial, conocimiento y muestra de escritura)
 async function buildPromptWithHistory(chatId, currentMessage) {
-    // NOTE: Assuming userId and activeAgentConfig are accessible in this scope
-    // Replace these with the actual way you get this data (e.g., global state, parameters)
-    const userId = getUserIdFromGlobalState(); // Placeholder for actual function
-    const activeAgentConfig = getAgentConfigFromGlobalState(); // Placeholder
+    // --- CORRECTED: Access global variables directly ---
+    // const userId = getUserIdFromGlobalState(); // Placeholder REMOVED
+    // const activeAgentConfig = getAgentConfigFromGlobalState(); // Placeholder REMOVED
+    // Use the global userId defined at the top of the script
+    const currentUserId = userId; // Assign to a local const for clarity if needed, or use global userId directly
+    const activeAgentConfig = currentAgentState.config; // Use the global state object
+    // --- END CORRECTION ---
 
     if (!activeAgentConfig) {
-        console.error(`[Worker ${userId}][buildPromptWithHistory v4] Error: No se encontró configuración de agente activa.`);
+        // Use the correct userId variable in the log message
+        console.error(`[Worker ${currentUserId}][buildPromptWithHistory v4] Error: No se encontró configuración de agente activa.`);
         return null; // Or handle error appropriately
     }
 
@@ -1858,7 +1838,8 @@ async function buildPromptWithHistory(chatId, currentMessage) {
         const urlInstruction = `IMPORTANT GOAL: Your primary objective is to subtly guide the conversation towards encouraging the user to visit this link: ${firstUrl}. Mention it naturally when relevant.`;
         // Prepend the URL instruction to the main persona instructions
         personaInstructions = `${urlInstruction}\n\n${personaInstructions}`;
-        console.log(`[Worker ${userId}][buildPromptWithHistory v4] Instrucción de URL añadida al prompt.`);
+        // Use the correct userId variable in the log message
+        console.log(`[Worker ${currentUserId}][buildPromptWithHistory v4] Instrucción de URL añadida al prompt.`);
     }
     // <<< FIN MODIFICACIÓN >>>
 
@@ -1867,12 +1848,14 @@ async function buildPromptWithHistory(chatId, currentMessage) {
         const firstFile = knowledgeFiles[0];
         try {
             // Use the previously defined downloadFileContent function
-            // Pass userId for logging inside the function
-            fileContent = await downloadFileContent(firstFile.url, userId);
-            console.log(`[Worker ${userId}][buildPromptWithHistory v4] Contenido del archivo "${firstFile.name}" cargado.`);
+            // Pass the correct userId variable
+            fileContent = await downloadFileContent(firstFile.url, currentUserId);
+            // Use the correct userId variable in the log message
+            console.log(`[Worker ${currentUserId}][buildPromptWithHistory v4] Contenido del archivo "${firstFile.name}" cargado.`);
         } catch (error) {
             // Log the error, but continue without the file content
-            console.error(`[Worker ${userId}][buildPromptWithHistory v4] No se pudo descargar el archivo ${firstFile.name} (${firstFile.url}): ${error}`);
+            // Use the correct userId variable in the log message
+            console.error(`[Worker ${currentUserId}][buildPromptWithHistory v4] No se pudo descargar el archivo ${firstFile.name} (${firstFile.url}): ${error}`);
             // Optionally, you could add a placeholder or specific error message to the prompt
             // fileContent = "[Error: Could not load knowledge file]";
         }
@@ -1880,17 +1863,20 @@ async function buildPromptWithHistory(chatId, currentMessage) {
 
     // 2. Combinar writingSample y fileContent para el prompt
     const MAX_KNOWLEDGE_CHARS = 4000; // Limitar caracteres combinados
+    let knowledgeContext = ''; // Initialize knowledgeContext here
     let combinedKnowledge = '';
     let knowledgeSourceInfo = [];
 
     if (writingSample.length > 0) {
-         console.log(`[Worker ${userId}][buildPromptWithHistory v4] Añadiendo writingSampleTxt (${writingSample.length} chars) al contexto.`);
-         combinedKnowledge += `\\n\\n--- INICIO Muestra de Escritura (writingSampleTxt) ---\\n${writingSample}\\n--- FIN Muestra de Escritura ---`;
+         // Use the correct userId variable in the log message
+         console.log(`[Worker ${currentUserId}][buildPromptWithHistory v4] Añadiendo writingSampleTxt (${writingSample.length} chars) al contexto.`);
+         combinedKnowledge += `\n\n--- INICIO Muestra de Escritura (writingSampleTxt) ---\n${writingSample}\n--- FIN Muestra de Escritura ---`;
          knowledgeSourceInfo.push('writingSampleTxt');
     }
     if (fileContent.length > 0) {
-         console.log(`[Worker ${userId}][buildPromptWithHistory v4] Añadiendo contenido de archivo (${knowledgeFiles[0].name}, ${fileContent.length} chars) al contexto.`);
-         combinedKnowledge += `\\n\\n--- INICIO Contenido de Archivo (${knowledgeFiles[0].name}) ---\\n${fileContent}\\n--- FIN Contenido de Archivo ---`;
+         // Use the correct userId variable in the log message
+         console.log(`[Worker ${currentUserId}][buildPromptWithHistory v4] Añadiendo contenido de archivo (${knowledgeFiles[0].name}, ${fileContent.length} chars) al contexto.`);
+         combinedKnowledge += `\n\n--- INICIO Contenido de Archivo (${knowledgeFiles[0].name}) ---\n${fileContent}\n--- FIN Contenido de Archivo ---`;
          knowledgeSourceInfo.push(`Archivo: ${knowledgeFiles[0].name}`);
     }
 
@@ -1912,19 +1898,25 @@ ${safeKnowledge}
 ---
 **Instrucción Adicional sobre Conocimiento:** Analiza el texto anterior ("Base de Conocimiento") y adapta tu respuesta para que coincida con el tono, vocabulario y estilo general encontrado, además de usar la información relevante que contenga. Sigue siempre tu identidad como ${persona.name || 'Agente IA'}.
 `;
-         console.log(`[Worker ${userId}][buildPromptWithHistory v4] Sección de conocimiento añadida al prompt.`);
+        // Use the correct userId variable in the log message
+         console.log(`[Worker ${currentUserId}][buildPromptWithHistory v4] Sección de conocimiento añadida al prompt.`);
     }
-    // --- Fin Procesar conocimiento ---
+
+    // 3. Obtener historial de conversación
+    // Use the correct userId variable when calling
+    const history = await getConversationHistory(chatId);
+    const historyText = history.map(msg => `${msg.role === 'assistant' ? (persona.name || 'Agente IA') : 'Cliente'}: ${msg.content}`).join('\n');
 
     // Prompt completo con historial, conocimiento y mensaje actual
     const safeCurrentMessage = (currentMessage || '').replace(/`/g, '\\`');
-    const fullPrompt = `${personaInstructions}\\n\\n---
-**Contexto de la Conversación:**\\n${historyText}
+    const fullPrompt = `${personaInstructions}\n\n${knowledgeContext}\n\n---
+**Contexto de la Conversación:**\n${historyText}
 ---
-\\n**Mensaje Actual del Cliente:**\\nCliente: ${safeCurrentMessage}\\n\\n---
+\n**Mensaje Actual del Cliente:**\nCliente: ${safeCurrentMessage}\n\n---    
 **Tu Respuesta (Como ${persona.name || 'Agente IA'}):**`;
 
-    console.log(`[Worker ${userId}][CONTEXT] Prompt final generado. Longitud aprox: ${fullPrompt.length} caracteres.`);
+    // Use the correct userId variable in the log message
+    console.log(`[Worker ${currentUserId}][CONTEXT] Prompt final generado. Longitud aprox: ${fullPrompt.length} caracteres.`);
     return fullPrompt;
 }
 

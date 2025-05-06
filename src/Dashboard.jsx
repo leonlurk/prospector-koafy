@@ -803,8 +803,15 @@ const Dashboard = () => {
              return <div>Página Action Flow (Requiere Agente)</div>;
         case 'SetterAgents': 
       return <SetterAgentsPage user={user} setSelectedOption={setSelectedOption} />;
-        case 'SetterAgentDescriptionSetup': 
-            return <AgentDescriptionSetupPage setSelectedOption={setSelectedOption} />;
+        case 'SetterAgentDescriptionSetup': {
+             console.warn("Attempted to render deprecated SetterAgentDescriptionSetup. This should not render anything directly now.");
+            // Perhaps redirect to the agent list or show an informative message
+             // For now, just render the agent list as a safe fallback
+            // return <SetterAgentsPage user={user} setSelectedOption={handleSidebarOptionChange} />; 
+            // OR Render the specific component if it exists and should be used?
+            // return <AgentDescriptionSetupPage user={user} />; // <-- COMENTANDO ESTA LÍNEA PARA EVITAR RENDER INTERMEDIO
+            return null; // Explicitly render nothing while in this temporary state
+        }
         case 'SetterAgentDetail': { 
              if (typeof selectedOption === 'string') {
                  const parts = selectedOption.split('_');

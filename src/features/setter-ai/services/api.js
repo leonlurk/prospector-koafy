@@ -22,12 +22,30 @@ const getApiKey = () => {
 const handleResponse = async (response) => {
   // Si recibimos una respuesta con status 200-299
   if (response.status >= 200 && response.status < 300) {
-    if (response.data) {
+    // Primero, verificar si el *cuerpo* de la respuesta indica explícitamente un fallo
+    if (response.data && response.data.success === false) {
+      console.warn('API returned 2xx status but success:false in body', response.data);
       return {
-        success: true,
-        data: response.data
+        success: false,
+        message: response.data.message || 'La API indicó un fallo interno.',
+        data: response.data // Devolver los datos igualmente
       };
     }
+    
+    // Si no hay fallo explícito en el cuerpo, proceder con la lógica de éxito
+    // Caso específico para createAgent (si devuelve ID anidado)
+    if (response.data?.data?.id) {
+         return { 
+            success: true, 
+            data: response.data, 
+            agentId: response.data.data.id // Extrae el ID si está presente
+        };
+    }
+    // Caso genérico si hay datos en el cuerpo (y no success:false)
+    if (response.data) {
+      return { success: true, data: response.data };
+    }
+    // Caso mínimo de éxito (status 2xx sin cuerpo relevante)
     return { success: true };
   }
 

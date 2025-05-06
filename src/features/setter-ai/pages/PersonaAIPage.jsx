@@ -188,22 +188,8 @@ Restricciones/Reglas: "Nunca prometas descuentos que no existen. Si no sabes una
 
         {/* Section 2: Model & Parameters */}
         <div className="lg:col-span-1 space-y-6">
-          {/* Language Selection (Optional - could be part of instructions) */}
-          <div>
-            <label htmlFor="language" className="block text-sm font-medium text-gray-700 mb-1">Idioma</label>
-            <select
-              id="language"
-              name="language"
-              value={personaData.language}
-              onChange={handleChange}
-              className="block w-full h-10 pl-3 pr-10 py-2 border text-black border-gray-300 bg-white rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
-            >
-              <option value="es">Español</option>
-              <option value="en">Inglés</option>
-              <option value="pt">Portugués</option>
-              {/* Add other languages */}
-            </select>
-          </div>
+          {/* Language Selection (Optional - could be part of instructions) -> Eliminado */}
+          {/* El bloque del div para seleccionar idioma ha sido eliminado */}
         </div>
       </div>
 

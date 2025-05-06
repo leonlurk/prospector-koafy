@@ -4,20 +4,21 @@ import React, { useState, useEffect } from 'react';
 import { useWhatsApp } from '../context/WhatsAppContext';
 import { getAgent } from '../services/api';
 // Importar componentes MUI necesarios para la nueva estructura
-import { Box, Typography, Paper, Tabs, Tab, CircularProgress } from '@mui/material'; 
+import { Box, Typography, Paper, Tabs, Tab, CircularProgress, Fade, Button } from '@mui/material'; 
+import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 
 // Child components for tabs (assuming they exist)
 import PersonaAIPage from './PersonaAIPage';
 import KnowledgeBasePage from './KnowledgeBasePage';
 import ActionFlowPage from './ActionFlowPage';
-import PublishPage from './PublishPage';
+// import PublishPage from './PublishPage'; // <- Ya no es necesario importar
 
 // Updated tabs definition - simpler now, just identifiers
 const tabs = [
-    { id: 'Persona', name: 'Persona IA' },
+    { id: 'Persona', name: 'Personalización' },
     { id: 'Knowledge', name: 'Conocimientos' },
     { id: 'Actions', name: 'Acciones' },
-    { id: 'Publish', name: 'Publicar' },
+    // { id: 'Publish', name: 'Publicar' }, // <- Eliminado
 ];
 
 // Accept props: agentId, user, selectedOptionValue (renamed for clarity), setSelectedOption function
@@ -101,11 +102,14 @@ function AgentDetailPage({ agentId, user, selectedOption: selectedOptionValue, s
 
     // Handler para cambio de pestaña usando MUI Tabs
     const handleTabChange = (event, newTabId) => {
-        // El segundo argumento de onChange de MUI Tabs es el nuevo `value` (que será nuestro tabId)
-        setActiveTabId(newTabId);
+        // No cambiar activeTabId inmediatamente si queremos animacion de salida
+        // setActiveTabId(newTabId); // Comentar o ajustar si se usa AnimatePresence
         
         const newSelectedOption = `SetterAgentDetail_${newTabId}_${agentId}`;
-        console.log(`AgentDetail: MUI Tab changed, setting option to: ${newSelectedOption}`);
+        console.log(`AgentDetail: MUI Tab changed, setting option to: ${newSelectedOption}, setting activeTabId to ${newTabId}`);
+        
+        // Actualizar el estado local que controla el contenido
+        setActiveTabId(newTabId);
         
         if (typeof setSelectedOption === 'function') {
              setSelectedOption(newSelectedOption); 
@@ -124,32 +128,60 @@ function AgentDetailPage({ agentId, user, selectedOption: selectedOptionValue, s
         return <Paper sx={{ p: 3, m: 3 }}>Agente no encontrado.</Paper>;
     }
 
-    // Render content based on activeTabId
+    // Render content based on activeTabId, wrapped in Fade
     const renderTabContent = () => {
+        let content = null;
         switch (activeTabId) {
             case 'Persona':
-                // Pass agentData and potentially user/setSelectedOption if needed by PersonaAIPage
-                return <PersonaAIPage agentData={agentData} user={user || currentUser} agentId={agentId} />; 
+                content = <PersonaAIPage agentData={agentData} user={user || currentUser} agentId={agentId} />;
+                break;
             case 'Knowledge':
-                return <KnowledgeBasePage agentData={agentData} user={user || currentUser} agentId={agentId} />;
+                content = <KnowledgeBasePage agentData={agentData} user={user || currentUser} agentId={agentId} />;
+                break;
             case 'Actions':
-                return <ActionFlowPage agentData={agentData} user={user || currentUser} agentId={agentId} />;
-            case 'Publish':
-                return <PublishPage agentData={agentData} user={user || currentUser} agentId={agentId} />;
+                content = <ActionFlowPage agentData={agentData} user={user || currentUser} agentId={agentId} />;
+                break;
+            // case 'Publish': // <- Eliminado
+            //     content = <PublishPage agentData={agentData} user={user || currentUser} agentId={agentId} />;
+            //     break;
             default:
-                return <Box sx={{ p: 3 }}>Contenido no encontrado</Box>;
+                content = <Box sx={{ p: 3 }}>Contenido no encontrado</Box>;
+                break;
         }
+        
+        // Wrap the content in Fade. Use activeTabId as key to trigger transitions.
+        // Timeout controls the speed (in ms).
+        return (
+            <Fade in={true} key={activeTabId} timeout={500}>
+                {/* Wrap content in a div for Fade to work reliably */}
+                <div>
+                    {content}
+                </div>
+            </Fade>
+        );
     };
 
     return (
-        // Contenedor principal con padding y fondo (si es necesario, o transparente si el layout padre ya lo tiene)
+        // Contenedor principal
         <Box sx={{ p: { xs: 2, sm: 3, md: 4 } }}> 
-            {/* Header con nombre del agente y botón Guardar global (si aplica aquí) */}
-            {/* Este header podría estar fuera de AgentDetailPage si es parte del layout general */}
-            {/* <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 4 }}>
-                <Typography variant="h5" component="h1">{agentData.persona?.name || `Agente ${agentId}`}</Typography>
-                <Button variant="contained" size="large">Guardar</Button> 
-            </Box> */}
+            {/* Botón Volver */}
+            <Button
+                startIcon={<ArrowBackIcon />}
+                onClick={() => setSelectedOption('SetterAgents')} // Navega a la lista de agentes
+                sx={{
+                    mb: 3, // Margen inferior para separar de las pestañas
+                    textTransform: 'none', // Evitar mayúsculas automáticas
+                    color: 'text.secondary', // Color discreto
+                    '&:hover': {
+                        backgroundColor: 'action.hover' // Efecto hover suave
+                    }
+                }}
+            >
+                Volver a la lista de agentes
+            </Button>
+
+            {/* Header (si lo hubiera) */}
+            {/* <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 4 }}> ... </Box> */}
 
             {/* Navegación con MUI Tabs */}
              <Box sx={{ borderBottom: 0, mb: 0, backgroundColor: '#F8F9FA', borderRadius: '12px 12px 0 0' }}> {/* Fondo claro para la barra de tabs */}
@@ -166,13 +198,15 @@ function AgentDetailPage({ agentId, user, selectedOption: selectedOptionValue, s
                         },
                          '& .MuiTab-root': {
                              textTransform: 'none',
-                             borderRadius: '8px',
+                             borderRadius: '9999px',
                              margin: '0 4px', // Espacio entre tabs
                              padding: '10px 16px',
                              minHeight: '40px',
                              fontWeight: 600,
                              color: 'text.secondary', // Color inactivo
                              opacity: 1,
+                             // Añadir transición para suavizar cambios de color y fondo
+                             transition: 'background-color 0.3s ease-in-out, color 0.3s ease-in-out',
                              '&.Mui-selected': {
                                  backgroundColor: '#000', // Fondo negro activo
                                  color: '#fff', // Texto blanco activo
@@ -200,7 +234,8 @@ function AgentDetailPage({ agentId, user, selectedOption: selectedOptionValue, s
                     p: { xs: 2, sm: 3, md: 4 }, // Padding interno
                     borderRadius: '0 0 12px 12px', // Redondeo solo inferior
                     borderTop: '1px solid', // Borde superior para separar de tabs
-                    borderColor: 'divider' 
+                    borderColor: 'divider',
+                    overflow: 'hidden' // Añadido para contener la animación
                 }}
             >
                 {renderTabContent()}

@@ -40,9 +40,11 @@ function CreateAgentPage() {
       try {
         const response = await createAgent({ type: 'scratch', name: 'Nuevo Agente (desde cero)' });
         if (response?.success && response.agentId) {
+          // Asegurar navegación explícita a la ruta de la pestaña 'persona'
+          console.log(`Navegando a /agents/${response.agentId}/persona tras crear desde cero.`);
           navigate(`/agents/${response.agentId}/persona`);
         } else {
-          console.error("Error simulado al crear agente 'scratch'");
+          console.error("Error simulado al crear agente 'scratch':", response?.message);
           setIsLoading(false); // Permitir reintentar
         }
       } catch (error) {
@@ -56,7 +58,8 @@ function CreateAgentPage() {
     } else if (optionType === 'clone') {
       navigate('/agents/new/select-clone');
     }
-    // setIsLoading(false) no se llama aquí intencionadamente si la navegación tiene éxito
+    // setIsLoading(false) no se llama aquí intencionadamente si la navegación tiene éxito para evitar parpadeos
+    // y permitir que la nueva página maneje su propio estado de carga.
   };
 
   return (
