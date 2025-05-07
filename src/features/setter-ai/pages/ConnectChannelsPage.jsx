@@ -107,9 +107,6 @@ function ConnectChannelsPage() {
                 <Typography gutterBottom variant="h6" component="div" sx={{ fontWeight: 'thin' }}>
                   Conecta con WhatsApp API
                 </Typography>
-                <Typography variant="body2" color="text.secondary">
-                  Hace 4 Horas {/* Texto placeholder como en Figma */}
-                </Typography>
                 <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
                   Aprende a como sacarle el maximo provecho a los agentes IA
                 </Typography>

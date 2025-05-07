@@ -145,7 +145,7 @@ function ActionFlowPage() {
       console.log('[ActionFlowPage][fetchFlows] Raw response from getActionFlows:', response);
       
       if (response.success && response.data) {
-        const flowsData = response.data || [];
+        const flowsData = response.data.data || [];
         console.log('[ActionFlowPage][fetchFlows] Data being set to flows state:', flowsData);
         setFlows(flowsData);
       } else {

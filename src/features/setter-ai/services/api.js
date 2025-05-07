@@ -622,3 +622,38 @@ export const updateUserSettings = async (userId, settings) => {
     return handleApiError(error);
   }
 };
+
+export const generateAssistedPrompt = async (userId, data) => {
+  try {
+    const response = await axios({
+      ...createFetchOptions('POST', data),
+      url: `${API_BASE_URL}/users/${userId}/generate-assisted-prompt`
+    });
+    return handleResponse(response);
+  } catch (error) {
+    console.error("Error generating assisted prompt:", error.response?.data || error.message);
+    // Return a structured error that the UI can use
+    return {
+      success: false,
+      message: error.response?.data?.message || "Error al conectar con el servicio de generación de prompts.",
+      error: error.response?.data || error.message
+    };
+  }
+};
+
+export const generateFollowupQuestions = async (userId, initialData) => {
+  try {
+    const response = await axios({
+      ...createFetchOptions('POST', initialData),
+      url: `${API_BASE_URL}/users/${userId}/generate-followup-questions`
+    });
+    return handleResponse(response);
+  } catch (error) {
+    console.error("Error generating followup questions:", error.response?.data || error.message);
+    return {
+      success: false,
+      message: error.response?.data?.message || "Error al generar preguntas de seguimiento.",
+      error: error.response?.data || error.message
+    };
+  }
+};

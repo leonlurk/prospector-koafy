@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 // Remove useParams, Outlet, NavLink, useLocation - replace with prop-based navigation
 // import { useParams, Outlet, NavLink, useLocation } from 'react-router-dom'; 
 import { useWhatsApp } from '../context/WhatsAppContext';
@@ -6,6 +6,7 @@ import { getAgent } from '../services/api';
 // Importar componentes MUI necesarios para la nueva estructura
 import { Box, Typography, Paper, Tabs, Tab, CircularProgress, Fade, Button } from '@mui/material'; 
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
+// import { useAuth } from '../../../context/AuthContext'; // This seems unused, consider removing if not needed elsewhere
 
 // Child components for tabs (assuming they exist)
 import PersonaAIPage from './PersonaAIPage';
@@ -161,6 +162,16 @@ function AgentDetailPage({ agentId, user, selectedOption: selectedOptionValue, s
         );
     };
 
+    // This handleUpdateAgent might not be directly used anymore if PersonaAIPage handles its own saves
+    // Or it could be a general refresh function if needed.
+    const handleUpdateAgent = async (updatedData) => {
+        if (!currentUser?.uid || !agentId) return;
+        console.log("AgentDetail: Updating agent with data (simulated for now):", updatedData);
+        // Potentially refetch or merge data if PersonaAIPage doesn't lift state up for all changes
+        setAgentData(prev => ({ ...prev, ...updatedData })); 
+        // alert("Agente actualizado (simulado)");
+    };
+
     return (
         // Contenedor principal
         <Box sx={{ p: { xs: 2, sm: 3, md: 4 } }}> 
@@ -240,6 +251,14 @@ function AgentDetailPage({ agentId, user, selectedOption: selectedOptionValue, s
             >
                 {renderTabContent()}
             </Paper>
+
+            {/* This save button might become redundant if PersonaAIPage handles its own save */}
+            {/* Consider if this button is still needed or if save actions are per-tab */}
+            {/* 
+            <button onClick={() => handleUpdateAgent(agentData)} style={{ padding: '10px 20px', backgroundColor: '#28a745', color: 'white', border: 'none', borderRadius: '5px', cursor: 'pointer', marginTop: '20px'}}>
+                Guardar Cambios del Agente (Simulado)
+            </button> 
+            */}
         </Box>
     );
 }

@@ -361,11 +361,24 @@ const Dashboard = () => {
   
           // --- PRIORITY CHECK: Instagram Connection --- 
           if (!sessionValid) {
-            // If NOT connected, force the Connect Instagram page
-            finalSelectedOption = "Conectar Instagram";
-            console.log("Setting initial option to Conectar Instagram (Session invalid/missing - PRIORITY).");
-            // Clear any potentially invalid last option from localStorage
-            localStorage.removeItem('lastSelectedOption'); 
+            const savedOption = localStorage.getItem('lastSelectedOption') || "Home"; // Default to Home
+            const currentContext = getToolContext(savedOption);
+
+            if (currentContext === "prospector") {
+              finalSelectedOption = "Conectar Instagram";
+              console.log("Setting initial option to Conectar Instagram (Session invalid/missing - Prospector context).");
+              // Clear any potentially invalid last option from localStorage
+              localStorage.removeItem('lastSelectedOption'); 
+            } else {
+              // Not in prospector context, allow access to non-prospector sections
+              finalSelectedOption = savedOption;
+              console.log(`Setting initial option to ${savedOption} (Session invalid/missing - Non-Prospector context: ${currentContext}).`);
+              // If the saved option was somehow "Conectar Instagram" itself, default to Home
+              if (savedOption === "Conectar Instagram") {
+                finalSelectedOption = "Home"; // Fallback to home
+                localStorage.removeItem('lastSelectedOption'); // Clean up
+              }
+            }
           } else {
             // If connected, THEN try to restore from localStorage
             const savedOption = localStorage.getItem('lastSelectedOption');
@@ -383,9 +396,22 @@ const Dashboard = () => {
         } catch (error) {
           console.error("Error during initial setup:", error);
           setIsInstagramConnected(false);
-          // On error, default to Connect Instagram page as a safe fallback
-          finalSelectedOption = "Conectar Instagram";
-          console.log("Setting initial option to Conectar Instagram (Error during setup - PRIORITY).");
+          sessionValid = false; // Explicitly set sessionValid to false for the 'finally' block
+
+          const savedOptionOnError = localStorage.getItem('lastSelectedOption') || "Home";
+          const errorContext = getToolContext(savedOptionOnError);
+
+          if (errorContext === "prospector") {
+            finalSelectedOption = "Conectar Instagram";
+            console.log("Setting initial option to Conectar Instagram (Error during setup - Prospector context).");
+          } else {
+            // On error, if not in prospector, try to restore the option or default to Home
+            finalSelectedOption = savedOptionOnError;
+             console.log(`Setting initial option to ${savedOptionOnError} (Error during setup - Non-Prospector context: ${errorContext}).`);
+             if (savedOptionOnError === "Conectar Instagram") {
+                finalSelectedOption = "Home"; // Fallback to home
+             }
+          }
           localStorage.removeItem('lastSelectedOption'); 
         } finally {
           // Set the determined option, fallback to Home ONLY if finalSelectedOption is somehow null

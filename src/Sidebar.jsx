@@ -268,7 +268,7 @@ const Sidebar = ({
                  <div key={herramientasDropdown.name} className="relative w-full">
                      <button
                          onClick={() => handleItemClick(herramientasDropdown)} // Use dedicated handler
-                         className={`flex items-center space-x-3 p-2 md:p-3 transition text-base md:text-lg text-white bg-transparent w-full rounded-lg hover:bg-white hover:bg-opacity-5`} // No active state based on selectedOption here
+                         className={`flex items-center space-x-3 p-2 md:p-3 transition border border-gray-700 rounded-full text-base md:text-lg text-white bg-transparent w-full hover:bg-white hover:bg-opacity-5`} // No active state based on selectedOption here
                      >
                          {React.isValidElement(herramientasDropdown.icon) ? (
                               React.cloneElement(herramientasDropdown.icon, { className: "w-5 h-5 md:w-6 md:h-6 flex items-center justify-center text-white shrink-0" })

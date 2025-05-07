@@ -6,6 +6,8 @@ import { db } from '../../../firebaseConfig';
 import OptionCard from '../components/OptionCard';
 import agentImageUrl from '../assets/agent.png';
 import { FaTrash } from 'react-icons/fa';
+import Button from '@mui/material/Button';
+import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 
 // --- Placeholder Icons --- 
 const SearchIcon = (props) => (
@@ -310,6 +312,7 @@ Error agentes: ${agentsResponse.data?.message || agentsResponse.message}` : `Err
           type: 'template',
           name: templateData.persona.name || `Agente desde plantilla ${templateKey}`,
           persona: templateData.persona,
+          knowledge: templateData.knowledge,
         };
         console.log("[handleCreationOptionClick] Creating agent from template with payload:", payload);
         const response = await createAgent(currentUser.uid, payload);
@@ -511,17 +514,7 @@ Error agentes: ${agentsResponse.data?.message || agentsResponse.message}` : `Err
   );
 
  const renderInitialCreationView = () => (
-    <div className="max-w-4xl mx-auto text-center">
-       {/* Optional Back Button if agents exist */}
-       {agents.length > 0 && (
-         <button 
-            onClick={() => setShowInitialCreationView(false)} 
-            className="absolute top-6 left-6 md:top-8 md:left-8 flex items-center text-sm font-medium text-gray-600 hover:text-gray-900 transition-colors"
-         >
-            <ArrowLeftIcon className="w-5 h-5 mr-1" />
-            Volver a la lista
-         </button>
-       )}
+    <div className="relative max-w-4xl mx-auto text-center">
       <h1 className="text-3xl font-bold text-gray-800 mb-4">Agente de IA para WhatsApp</h1>
       <p className="text-lg text-gray-500 mb-10">
         Crea un agente conversacional, capacitado en el tema, que guíe a los usuarios, responda a sus preguntas y garantice una finalización fluida y precisa.
@@ -544,7 +537,7 @@ Error agentes: ${agentsResponse.data?.message || agentsResponse.message}` : `Err
         <OptionCard
           Icon={BuildingOfficeIcon} // Replace with actual icon
           title="Plantilla para Inmobiliaria"
-          description="Diseña tu propio Agente de IA y conéctelo a sus formularios" // Descripciones de Figma
+          description="Diseña tu propio Agente de IA y conéctalo a sus formularios" // Descripciones de Figma
           onClick={() => handleCreationOptionClick('template', 'inmobiliaria')}
           className="h-full flex flex-col"
         />
