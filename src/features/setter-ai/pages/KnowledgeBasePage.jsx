@@ -140,7 +140,7 @@ const FileUploadSection = ({ data, handleChange, handleFileChange }) => (
           </label>
           <p className="pl-1">o arrastre y suelte</p>
         </div>
-        <p className="text-xs text-gray-500">PDF, DOCX, TXT hasta 10MB</p> {/* Adjust types/size */}
+        <p className="text-xs text-gray-500">formato: TXT</p> {/* Adjust types/size */}
       </div>
     </div>
     {/* Display selected file name if available */}
