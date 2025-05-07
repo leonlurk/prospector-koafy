@@ -432,7 +432,7 @@ const PromptHelperModal = ({ isOpen, onClose, onSubmit, isLoading, userId }) => 
   const totalSteps = followupQuestions.length > 0 ? 2 : 1;
 
   return (
-    <div style={styles.modalOverlay} onClick={onClose}>
+    <div style={styles.modalOverlay} /* onClick={onClose} */ >
       <div style={styles.modalContent} onClick={(e) => e.stopPropagation()}>
         <div style={styles.modalHeader}>
           <h2 style={styles.modalTitle}>
@@ -488,18 +488,22 @@ const PromptHelperModal = ({ isOpen, onClose, onSubmit, isLoading, userId }) => 
             </div>
 
             {/* Needs Tools */}
+            {/*
             <div style={styles.checkboxContainer}>
               <input type="checkbox" id="needsTools" style={styles.checkbox} checked={needsTools} onChange={(e) => setNeedsTools(e.target.checked)} />
               <label htmlFor="needsTools" style={{...styles.label, marginBottom: 0}}>6. ¿El Agente necesitará acceder a herramientas o funciones específicas (ej: calendario, CRM, base de datos de productos)?</label>
             </div>
+            */}
 
             {/* Tools */}
+            {/*
             {needsTools && (
               <div style={styles.formGroup}>
                 <label htmlFor="tools" style={styles.label}>Si es así, ¿cuáles herramientas o funciones?</label>
                 <textarea id="tools" style={styles.textarea} value={tools} onChange={(e) => setTools(e.target.value)} placeholder="Ej: Acceso a API de calendario para agendar, consulta a base de datos de FAQs, etc."/>
               </div>
             )}
+            */}
 
             {/* Expected Inputs */}
             <div style={styles.formGroup}>

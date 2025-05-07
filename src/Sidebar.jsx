@@ -139,7 +139,7 @@ const Sidebar = ({
             { name: "Prospector", label: "Prospector", icon: <FaHome className="md:w-5 md:h-6 text-white" /> }, 
             { name: "Setter IA", label: "Setter IA", icon: <FaRobot className="md:w-5 md:h-6 text-white" /> }, 
             // { name: "Calendar", label: "Calendar", icon: <FaCalendarAlt className="md:w-5 md:h-6 text-white" /> },
-            { name: "CRMWhatsApp", label: "CRM WhatsApp", icon: <FaWhatsapp className="md:w-5 md:h-6 text-white" /> }
+            // { name: "CRMWhatsApp", label: "CRM WhatsApp", icon: <FaWhatsapp className="md:w-5 md:h-6 text-white" /> }
         ]
     };
     
@@ -206,9 +206,6 @@ const Sidebar = ({
             else if (subItem.name === "Prospector") {
                  console.log("[Sidebar Click] Prospector clicked. Setting targetOption to Home.");
                  targetOption = "Home"; 
-            } else if (subItem.name === "CRMWhatsApp") { 
-                 console.log("[Sidebar Click] CRMWhatsApp clicked. Setting targetOption to CRMWhatsApp.");
-                 targetOption = "CRMWhatsApp";
             }
         } else if (parentItemName === "Listas") {
              targetOption = subItem.name; // Whitelist or Blacklist
@@ -268,7 +265,7 @@ const Sidebar = ({
                  <div key={herramientasDropdown.name} className="relative w-full">
                      <button
                          onClick={() => handleItemClick(herramientasDropdown)} // Use dedicated handler
-                         className={`flex items-center space-x-3 p-2 md:p-3 transition border border-gray-700 rounded-full text-base md:text-lg text-white bg-transparent w-full hover:bg-white hover:bg-opacity-5`} // No active state based on selectedOption here
+                         className={`flex items-center space-x-3 p-3 md:p-4 transition border border-gray-700 rounded-full text-base md:text-lg text-white w-full bg-gradient-to-r from-purple-600 to-blue-500 hover:from-purple-700 hover:to-blue-600 hover:shadow-lg shadow-md`} // No active state based on selectedOption here
                      >
                          {React.isValidElement(herramientasDropdown.icon) ? (
                               React.cloneElement(herramientasDropdown.icon, { className: "w-5 h-5 md:w-6 md:h-6 flex items-center justify-center text-white shrink-0" })

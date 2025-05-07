@@ -18,7 +18,7 @@ import ActionFlowPage from './ActionFlowPage';
 const tabs = [
     { id: 'Persona', name: 'Personalización' },
     { id: 'Knowledge', name: 'Conocimientos' },
-    { id: 'Actions', name: 'Acciones' },
+    // { id: 'Actions', name: 'Acciones' },
     // { id: 'Publish', name: 'Publicar' }, // <- Eliminado
 ];
 
@@ -139,9 +139,11 @@ function AgentDetailPage({ agentId, user, selectedOption: selectedOptionValue, s
             case 'Knowledge':
                 content = <KnowledgeBasePage agentData={agentData} user={user || currentUser} agentId={agentId} />;
                 break;
+            /*
             case 'Actions':
                 content = <ActionFlowPage agentData={agentData} user={user || currentUser} agentId={agentId} />;
                 break;
+            */
             // case 'Publish': // <- Eliminado
             //     content = <PublishPage agentData={agentData} user={user || currentUser} agentId={agentId} />;
             //     break;
