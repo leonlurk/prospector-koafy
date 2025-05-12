@@ -31,12 +31,12 @@ const ChatCard = ({ chat, onUnassign }) => (
       </div>
       <div className="flex-grow min-w-0">
       <p className="font-semibold text-slate-800 dark:text-slate-100 truncate text-sm leading-tight">
-        {chat.contactName || chat.chatId}
+        {chat.contactDisplayName || chat.contactName || chat.chatId}
       </p>
       <p className="text-xs text-slate-500 dark:text-slate-300 truncate mt-1">
         {chat.lastMessageContent || 'No hay mensajes recientes'}
       </p>
-    </div>
+      </div>
     {onUnassign && (
       <button 
         onClick={(e) => { e.stopPropagation(); onUnassign(chat.chatId || chat.id); }}
@@ -170,6 +170,10 @@ const KanbanBoardsView = () => {
              };
         }
         setColumnsState(initialColumns);
+        // Update the specific board in the main boards list with the live column count
+        setBoards(prevBoards => prevBoards.map(b => 
+            b.id === boardId ? { ...b, live_columns_count: response.columns?.length ?? 0 } : b
+        ));
       } else {
         if (response.code === 'INDEX_REQUIRED_CHATS_KANBAN') {
           console.log("Error específico de índice faltante detectado. Intentando obtener solo las columnas...");
@@ -186,6 +190,10 @@ const KanbanBoardsView = () => {
               const initialColumns = {};
               (basicBoardDetails.columns || []).forEach(col => { initialColumns[col.id] = { ...col, chats: [] }; });
               setColumnsState(initialColumns);
+              // Update the specific board in the main boards list with the live column count (even if chats failed)
+              setBoards(prevBoards => prevBoards.map(b => 
+                b.id === boardId ? { ...b, live_columns_count: alternativeResponse.columns?.length ?? 0 } : b
+              ));
               showNotificationFunc("Se ha cargado información básica del tablero. Los chats no están disponibles hasta que el administrador complete la configuración.", "warning");
             } else {
               const basicBoardDetails = { board: { id: boardId, name: selectedBoard?.name || "Tablero", columns_order: [] }, columns: [], noChatsLoaded: true };
@@ -311,6 +319,7 @@ const KanbanBoardsView = () => {
       const response = await createKanbanColumn(userId, selectedBoard.id, { name: columnName, stageType: stageType }, authToken);
       if (response && response.success) {
         await fetchBoardDetailsData(selectedBoard.id);
+        await fetchBoards();
         handleCloseCreateColumnModal();
         showNotificationFunc("Columna creada con éxito", "success");
       } else {
@@ -382,7 +391,8 @@ const KanbanBoardsView = () => {
       const response = await deleteKanbanColumn(userId, selectedBoard.id, columnToDelete.id, authToken);
       if (response.success) {
         showNotificationFunc("Columna eliminada con éxito.", "success");
-        await fetchBoardDetailsData(selectedBoard.id); // Refresh board details
+        await fetchBoardDetailsData(selectedBoard.id); // Keep this
+        await fetchBoards(); // Add this line to refresh the main list
         handleCloseDeleteColumnModal();
       } else {
         showNotificationFunc(response.message || "Error al eliminar la columna.", "error");
@@ -596,7 +606,8 @@ const KanbanBoardsView = () => {
                     <div>
                         <h3 className={`text-lg font-bold ${selectedBoard?.id === board.id ? 'text-white' : 'text-slate-800'}`}>{board.name}</h3>
                         <p className={`text-sm mt-1 ${selectedBoard?.id === board.id ? 'text-purple-100' : 'text-slate-500'}`}>
-                        {(boardDetails && selectedBoard?.id === board.id ? boardDetails.columns?.length : board.columns_count || 0)} columnas
+                        {/* Use live_columns_count if available, otherwise fallback to columns_count, then 0 */}
+                        {`${typeof board.live_columns_count === 'number' ? board.live_columns_count : (board.columns_count || 0)} columnas`}
                         </p>
                     </div>
                 </div>

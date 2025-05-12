@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { FaWhatsapp, FaUser, FaRobot, FaChartBar, FaPlus, FaPaperPlane, FaQrcode, FaCog, FaSearch, FaSignInAlt, FaSpinner, FaTasks, FaCommentDots, FaPaperclip } from 'react-icons/fa';
+import { FaWhatsapp, FaUser, FaRobot, FaChartBar, FaPlus, FaPaperPlane, FaQrcode, FaCog, FaSearch, FaSignInAlt, FaSpinner, FaTasks, FaCommentDots, FaPaperclip, FaEdit, FaSave, FaTimes } from 'react-icons/fa';
 import { db, auth } from '../firebaseConfig';
 import axios from 'axios';
 import { 
@@ -22,6 +22,223 @@ const getApiKey = () => {
 
 // Modo de depuración
 const DEBUG = true; // Controla logs detallados
+
+// Componente de chat
+const ChatInterface = ({ 
+  conversations, 
+  selectedChat, 
+  selectChat, 
+  messages, 
+  newMessage, 
+  setNewMessage, 
+  sendMessage, 
+  openAssignToKanbanModal, 
+  formatPhoneNumber, 
+  connectionStatus, 
+  wsRef,
+  isEditingName,
+  editingNameValue,
+  handleEditNameClick,
+  handleNameInputChange,
+  handleSaveName,
+  handleCancelEditName
+}) => (
+    // Main container with modern styling
+    <div className="flex h-full bg-slate-50 text-slate-900 font-['Poppins'] rounded-xl shadow-lg overflow-hidden border border-slate-100">
+      {/* Lista de conversaciones */}
+      <div className="w-1/3 flex flex-col border-r border-slate-100 bg-white">
+        {/* Header con Búsqueda y Filtros */}
+        <div className="p-4 space-y-3 border-b border-slate-100">
+          <div className="relative">
+            <FaSearch className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+            <input 
+              type="text" 
+              placeholder="Buscar chat..." 
+              className="w-full p-2 pl-10 bg-slate-50 border border-transparent focus:bg-white focus:ring-1 focus:ring-purple-500 focus:border-purple-500 outline-none transition text-sm"
+            />
+          </div>
+        </div>
+        
+        {/* Lista de Chats */}
+        <div className="flex-grow overflow-y-auto">
+          {conversations && conversations.length > 0 ? (
+            conversations.map(chat => (
+              <div 
+                key={chat.id || chat.phoneNumber} 
+                className={`px-4 py-3 cursor-pointer transition-colors duration-150 ease-in-out border-l-2 flex items-center space-x-3 ${ 
+                  selectedChat?.id === chat.id 
+                    ? 'border-purple-500 bg-slate-50' 
+                    : 'border-transparent hover:bg-slate-50'
+                }`}
+                onClick={() => selectChat(chat)}
+              >
+                 {/* Avatar */}
+                 <div className="relative flex-shrink-0">
+                    <div className="w-10 h-10 bg-gradient-to-br from-purple-400 to-blue-400 rounded-full flex items-center justify-center text-white text-base font-medium shadow-sm">
+                      {chat.name ? chat.name.substring(0,1).toUpperCase() : <FaUser size={18}/>}
+                    </div>
+                 </div>
+               
+                <div className="flex-1 min-w-0">
+                  <div className="flex justify-between items-center">
+                    <p className="text-sm font-medium text-slate-700 truncate">
+                      {chat.contactDisplayName || chat.name || formatPhoneNumber(chat.phoneNumber)}
+                    </p>
+                    <p className={`text-xs whitespace-nowrap ${selectedChat?.id === chat.id ? 'text-purple-600' : 'text-slate-400'}`}>
+                      {chat.timestamp ? new Date(chat.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : ''}
+                    </p>
+                  </div>
+                  <div className="flex justify-between items-center mt-0.5">
+                    <p className={`text-xs truncate ${selectedChat?.id === chat.id ? 'text-slate-600' : 'text-slate-500'}`}>
+                      {chat.lastMessage || 'Haz click para ver detalles'}
+                    </p>
+                    {chat.unreadCount > 0 && (
+                      <div className="bg-purple-500 text-white rounded-full w-5 h-5 flex items-center justify-center text-[10px] font-medium shadow-sm">
+                        {chat.unreadCount}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            ))
+          ) : (
+            <div className="p-6 text-center text-slate-500">
+              <FaWhatsapp size={36} className="mx-auto mb-3 text-slate-400" />
+              <p className="font-medium text-sm">Bandeja vacía</p>
+              <p className="text-xs">No hay conversaciones.</p>
+            </div>
+          )}
+        </div>
+      </div>
+      
+      {/* Panel de mensajes */}
+      <div className="w-2/3 flex flex-col bg-white">
+        {selectedChat ? (
+          <>
+            {/* Cabecera del chat - Minimalist */}
+            <div className="p-3 border-b border-slate-100 bg-white flex justify-between items-center shadow-sm">
+              <div className="flex items-center space-x-3 flex-grow min-w-0">
+                 <div className="relative flex-shrink-0">
+                    <div className="w-10 h-10 bg-gradient-to-br from-purple-400 to-blue-400 rounded-full flex items-center justify-center text-white text-base font-medium shadow-sm">
+                        {selectedChat.name ? selectedChat.name.substring(0,1).toUpperCase() : <FaUser size={18}/>}
+                    </div>
+                 </div>
+                <div className="flex-grow min-w-0">
+                 {isEditingName ? (
+                    <div className="flex items-center space-x-1">
+                        <input 
+                            type="text"
+                            value={editingNameValue}
+                            onChange={handleNameInputChange}
+                            onKeyDown={(e) => e.key === 'Enter' ? handleSaveName() : (e.key === 'Escape' ? handleCancelEditName() : null)}
+                            className="text-base font-semibold text-slate-800 bg-slate-100 px-2 py-0.5 rounded border border-purple-300 focus:outline-none focus:ring-1 focus:ring-purple-500 focus:border-purple-500 flex-grow"
+                            autoFocus
+                        />
+                        <button onClick={handleSaveName} className="p-1 text-green-600 hover:text-green-700"><FaSave size={16}/></button>
+                        <button onClick={handleCancelEditName} className="p-1 text-red-600 hover:text-red-700"><FaTimes size={16}/></button>
+                    </div>
+                 ) : (
+                    <div className="flex items-center space-x-1.5 group">
+                      <h3 className="font-semibold text-slate-800 text-base leading-tight truncate">
+                        {selectedChat.contactDisplayName || selectedChat.name || formatPhoneNumber(selectedChat.phoneNumber)}
+                      </h3>
+                      <button onClick={handleEditNameClick} className="text-slate-400 hover:text-purple-600 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <FaEdit size={14} />
+                      </button>
+                    </div>
+                 )}
+                  <p className={`text-xs leading-tight ${connectionStatus === 'connected' && wsRef.current?.readyState === WebSocket.OPEN ? 'text-green-500' : 'text-slate-400'}`}>
+                     {connectionStatus === 'connected' && wsRef.current?.readyState === WebSocket.OPEN ? '● Online' : '○ Offline'}
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center space-x-1">
+                 {/* Simplified Assign Button */}
+                <button 
+                  onClick={() => openAssignToKanbanModal(selectedChat)}
+                  className="p-2 text-slate-500 hover:text-purple-600 rounded-lg hover:bg-slate-100 transition-colors"
+                  title="Asignar chat a Kanban"
+                  disabled={!selectedChat.id}
+                >
+                  <FaTasks size={18} /> 
+                </button>
+                {/* Placeholder Action Icons */}
+                <button className="p-2 text-slate-500 hover:text-purple-600 rounded-lg hover:bg-slate-100 transition-colors">
+                    <FaSearch size={18}/>
+                </button>
+                <button className="p-2 text-slate-500 hover:text-purple-600 rounded-lg hover:bg-slate-100 transition-colors">
+                    <FaCog size={18}/> {/* Using FaCog as a general 'more options' placeholder */}
+                </button>
+              </div>
+            </div>
+            
+            {/* Área de mensajes - Increased spacing & Reversed Order */}
+            <div className="flex-1 overflow-y-auto p-6 space-y-4 bg-gray-50 flex flex-col-reverse">
+              {messages && messages.length > 0 ? (
+                messages.map(msg => {
+                  // Log fromMe value for each message during render
+                  console.log(`[Render] Message ID: ${msg.id}, fromMe: ${msg.fromMe}`); 
+                  return (
+                    <div 
+                      key={msg.id || (String(msg.timestamp) + '-' + Math.random().toString(36).substr(2, 9))} 
+                      className={`flex ${msg.fromMe ? 'justify-end' : 'justify-start'}`}
+                    >
+                      <div className={`max-w-xl px-4 py-3 rounded-2xl shadow-md ${ 
+                        msg.fromMe 
+                          ? 'bg-blue-50 text-blue-800 rounded-br-lg' 
+                          : 'bg-white text-slate-700 rounded-bl-lg border border-slate-200'
+                      }`}>
+                        <p className="text-sm whitespace-pre-wrap">{msg.body}</p>
+                        <p className={`text-xs mt-1.5 ${msg.fromMe ? 'text-blue-600/80' : 'text-slate-400'} text-right`}>
+                          {msg.timestamp ? new Date(msg.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : ''}
+                        </p>
+                      </div>
+                    </div>
+                  );
+                })
+              ) : (
+                <div className="flex justify-center items-center h-full text-slate-500">
+                  <FaCommentDots size={32} className="mx-auto mb-2" />
+                  <p>No hay mensajes en esta conversación.</p>
+                </div>
+              )}
+            </div>
+            
+            {/* Área de entrada de mensajes - Minimalist */}
+            <div className="p-3 border-t border-slate-100 bg-white">
+              <div className="flex items-center space-x-2 bg-slate-50 p-1 rounded-lg">
+                <button className="p-2.5 text-slate-500 hover:text-purple-600 rounded-lg hover:bg-slate-200 transition-colors">
+                  <FaPaperclip size={18} />
+                </button>
+                <input 
+                  type="text" 
+                  placeholder="Escribe un mensaje..." 
+                  value={newMessage}
+                  onChange={(e) => setNewMessage(e.target.value)}
+                  onKeyPress={(e) => e.key === 'Enter' && !e.shiftKey ? (e.preventDefault(), sendMessage()) : null}
+                  className="flex-grow py-2 px-3 bg-transparent text-slate-700 placeholder-slate-400 focus:outline-none text-sm"
+                />
+                <button 
+                  onClick={sendMessage} 
+                  disabled={!newMessage.trim() || connectionStatus !== 'connected' || wsRef.current?.readyState !== WebSocket.OPEN}
+                  className="p-2.5 rounded-lg bg-gradient-to-r from-purple-500 to-blue-500 hover:from-purple-600 hover:to-blue-600 text-white transition-all shadow-sm hover:shadow-md disabled:opacity-60 disabled:cursor-not-allowed flex items-center justify-center"
+                >
+                  <FaPaperPlane size={18} />
+                </button>
+              </div>
+            </div>
+          </>
+        ) : (
+          <div className="flex-1 flex flex-col items-center justify-center bg-slate-100 text-slate-500 p-8">
+            <FaWhatsapp size={56} className="mx-auto mb-5 text-slate-400" />
+            <h3 className="text-xl font-semibold mb-1">Tu Bandeja de Entrada CRM</h3>
+            <p className="text-center">Selecciona una conversación de la lista para ver los mensajes aquí.</p>
+            <p className="text-center text-sm mt-1">Gestiona todas tus interacciones en un solo lugar.</p>
+          </div>
+        )}
+      </div>
+    </div>
+  );
 
 const WhatsAppCRM = ({ user }) => {
   // Estados para la conexión y estado de WhatsApp
@@ -61,8 +278,13 @@ const WhatsAppCRM = ({ user }) => {
     isLoadingBoards: false,
     isLoadingColumns: false,
     error: null,
-    successMessage: ''
+    successMessage: '',
+    currentContactName: ''
   });
+
+  // <<< ADDED: State for contact name editing >>>
+  const [isEditingName, setIsEditingName] = useState(false);
+  const [editingNameValue, setEditingNameValue] = useState('');
 
   // Helper function para manejar respuestas de la API (como en setter-ai/services/api.js)
   const handleResponse = async (response) => {
@@ -341,7 +563,8 @@ const WhatsAppCRM = ({ user }) => {
           wsRef.current.onmessage = (event) => {
             try {
                 const message = JSON.parse(event.data);
-                if (DEBUG) console.log('WebSocket message received:', message);
+                // Log ALL incoming WS messages for debugging
+                console.log('[WebSocket] Received Message:', message);
 
                 // Manejar diferentes tipos de mensajes del servidor
                 switch (message.type) {
@@ -359,6 +582,8 @@ const WhatsAppCRM = ({ user }) => {
                         }
                         // Actualizar la lista de mensajes del chat seleccionado
                         if (selectedChat && selectedChat.id === message.payload.chatId) {
+                            // Log before adding message
+                            console.log('[WebSocket] Adding NEW_MESSAGE to selected chat:', message.payload);
                             setMessages(prev => [...prev, message.payload]);
                             // TODO: Scroll to bottom
                         }
@@ -499,7 +724,6 @@ const WhatsAppCRM = ({ user }) => {
           wsRef.current = null;
       }
        // Resetear estado de conexión al desmontar para evitar estados inconsistentes si se remonta rápido
-       setConnectionStatus('disconnected');
        setIsConnectingWs(false);
        setReconnectAttempts(0); // Resetear intentos al desmontar/cambiar user
     };
@@ -605,25 +829,26 @@ const WhatsAppCRM = ({ user }) => {
 
   // Cargar mensajes de un chat específico
   const loadChatMessages = async (chatId) => {
+    console.log(`[loadChatMessages] Attempting to load messages for chatId: ${chatId}`);
     try {
       console.log("Cargando mensajes para chat:", chatId);
       const result = await apiCall(`/users/${user.uid}/chats/${chatId}/messages?limit=50`);
-      console.log("Mensajes cargados:", result);
+      console.log("[loadChatMessages] Raw API response:", result); // Log raw response
       if (result && result.data) {
         // Procesar los mensajes para asegurar el formato correcto
         const processedMessages = result.data.map(msg => ({
           id: msg.id || `${msg.timestamp}-${Math.random().toString(36).substr(2, 9)}`,
           body: formatMessageContent(msg.content || msg.body),
-          fromMe: !!msg.fromMe,
+          fromMe: !!msg.fromMe, // Ensure boolean
           timestamp: msg.timestamp,
           hasMedia: isMediaMessage(msg.content || msg.body)
         }));
         
-        console.log("Mensajes procesados:", processedMessages);
+        console.log("[loadChatMessages] Processed messages (check fromMe):", processedMessages);
         setMessages(processedMessages);
       }
     } catch (error) {
-      console.error("Error al cargar mensajes:", error);
+      console.error("[loadChatMessages] Error loading messages:", error);
       setErrorMessage("Error al cargar mensajes: " + (error.message || "Error desconocido"));
     }
   };
@@ -659,29 +884,32 @@ const WhatsAppCRM = ({ user }) => {
   const sendMessage = async () => {
     if (!selectedChat || !newMessage.trim()) return;
     
+    console.log(`[sendMessage] Attempting to send: "${newMessage}" to chat:`, selectedChat.id);
+    console.log(`[sendMessage] Connection Status: ${connectionStatus}, WS Ready State: ${wsRef.current?.readyState}`);
+    
     try {
+      console.log('[sendMessage] Making API call...');
       await apiCall(`/users/${user.uid}/send-message`, 'POST', {
-        number: selectedChat.phoneNumber,
+        number: selectedChat.phoneNumber, // Ensure this holds the correct recipient ID
         message: newMessage
       });
+      console.log('[sendMessage] API call successful.');
       
       // Optimistic update para la UI
       const newMsg = {
         id: Date.now().toString(),
         body: newMessage,
-        fromMe: true,
+        fromMe: true, // Assuming sent messages are always fromMe
         timestamp: new Date().toISOString()
       };
       
+      console.log('[sendMessage] Optimistically updating UI with:', newMsg);
       setMessages(prev => [...prev, newMsg]);
       setNewMessage('');
       
-      // Recargar mensajes después de enviar para confirmación
-      setTimeout(() => {
-        loadChatMessages(selectedChat.id);
-      }, 1000);
     } catch (error) {
-      console.error("Error al enviar mensaje:", error);
+      console.error("[sendMessage] Error sending message:", error);
+      setErrorMessage("Error al enviar mensaje: " + (error.message || "Error desconocido")); // Show error in UI
     }
   };
 
@@ -740,21 +968,31 @@ const WhatsAppCRM = ({ user }) => {
   // --- Kanban Assignment Modal Functions ---
   const openAssignToKanbanModal = async (chat) => {
     if (!chat || !chat.id) {
-      console.error("Cannot open assign modal: chat or chat.id is missing", chat);
-      setAssignModalState(prev => ({ ...prev, error: "Información del chat inválida."}));
+      console.error("[openAssignToKanbanModal] Invalid chat object provided.");
+      setErrorMessage("No se puede asignar el chat: objeto inválido.");
       return;
     }
+    console.log("[openAssignToKanbanModal] Opening for chat:", chat);
+    // <<< ADDED: Initialize currentContactName from chat >>>
     setAssignModalState(prev => ({
       ...prev,
       isOpen: true,
       chat: chat,
-      selectedBoardId: '',
-      columns: [],
-      selectedColumnId: '',
-      error: null,
-      successMessage: ''
+        selectedBoardId: chat.kanbanBoardId || '', // Pre-select board if already assigned
+        selectedColumnId: chat.kanbanColumnId || '', // Pre-select column if already assigned
+        currentContactName: chat.contactDisplayName || chat.name || '', // Pre-fill name
+        columns: [], // Reset columns initially
+        errorMessage: null, 
+        successMessage: null,
+        isLoading: true 
     }));
-    await loadBoardsForModal();
+    
+    await loadBoardsForModal(); // Load boards first
+    // If a board was pre-selected, load its columns
+    if (chat.kanbanBoardId) {
+      await handleBoardSelectedInModal(chat.kanbanBoardId, chat.kanbanColumnId || ''); // Pass pre-selected column
+    }
+     setAssignModalState(prev => ({ ...prev, isLoading: false }));
   };
 
   const loadBoardsForModal = async () => {
@@ -775,12 +1013,11 @@ const WhatsAppCRM = ({ user }) => {
     }
   };
 
-  const handleBoardSelectedInModal = async (boardId) => {
+  const handleBoardSelectedInModal = async (boardId, preSelectedColumnId = '') => {
     setAssignModalState(prev => ({
       ...prev,
       selectedBoardId: boardId,
-      columns: [], // Reset columns
-      selectedColumnId: '', // Reset selected column
+      selectedColumnId: preSelectedColumnId,
       isLoadingColumns: true,
       error: null
     }));
@@ -802,30 +1039,48 @@ const WhatsAppCRM = ({ user }) => {
   };
   
   const handleAssignConfirm = async () => {
-    const { chat, selectedBoardId, selectedColumnId } = assignModalState;
-    if (!chat || !chat.id || !selectedBoardId || !selectedColumnId || !user || !user.uid) {
-      setAssignModalState(prev => ({ ...prev, error: "Faltan datos para la asignación. Seleccione tablero y columna." }));
+    if (!assignModalState.chat || !assignModalState.selectedBoardId || !assignModalState.selectedColumnId) {
+      setAssignModalState(prev => ({ ...prev, errorMessage: "Debes seleccionar un tablero y una columna." }));
       return;
     }
-    setAssignModalState(prev => ({ ...prev, error: null, successMessage: '' })); // Clear previous messages
+
+    setAssignModalState(prev => ({ ...prev, isLoading: true, errorMessage: null, successMessage: null }));
+
+    const endpoint = `/users/${user.uid}/chats/${assignModalState.chat.id}/assign-kanban-column`;
+    const payload = {
+      boardId: assignModalState.selectedBoardId,
+      columnId: assignModalState.selectedColumnId,
+      // <<< ADDED: Include contactName in payload >>>
+      contactName: assignModalState.currentContactName 
+    };
+
+    console.log("[handleAssignConfirm] Sending payload:", payload);
+
     try {
-      const response = await assignChatToKanbanColumn(user.uid, chat.id, selectedBoardId, selectedColumnId, STATIC_API_KEY);
+        const response = await apiCall(endpoint, 'PUT', payload);
       if (response.success) {
         setAssignModalState(prev => ({
           ...prev,
-          successMessage: `Chat "${chat.name || chat.phoneNumber}" asignado exitosamente!`,
-          error: null,
-        }));
-        // Optionally close modal after a delay or keep it open with success message
-        setTimeout(() => {
-          closeAssignModal();
-        }, 2000);
+                isLoading: false, 
+                successMessage: 'Chat asignado con éxito!'
+            }));
+            // Optionally update local state if needed, or reload
+            await loadConversations(); // Reload conversations to reflect potential name change
+            // Close modal after a short delay
+            setTimeout(() => closeAssignModal(), 1500);
       } else {
-        throw new Error(response.message || "Error al asignar el chat.");
+            setAssignModalState(prev => ({ 
+                ...prev, 
+                isLoading: false, 
+                errorMessage: response.message || 'Error desconocido al asignar.' 
+            }));
       }
     } catch (error) {
-      console.error("Error confirming chat assignment:", error);
-      setAssignModalState(prev => ({ ...prev, error: error.message, successMessage: '' }));
+        setAssignModalState(prev => ({ 
+            ...prev, 
+            isLoading: false, 
+            errorMessage: `Error: ${error.message}` 
+        }));
     }
   };
 
@@ -840,201 +1095,10 @@ const WhatsAppCRM = ({ user }) => {
       isLoadingBoards: false,
       isLoadingColumns: false,
       error: null,
-      successMessage: ''
+      successMessage: '',
+      currentContactName: ''
     });
   };
-
-  // Componente de chat
-  const ChatInterface = () => (
-    // Main container with modern styling
-    <div className="flex h-full bg-slate-100 dark:bg-slate-850 font-['Poppins'] rounded-xl shadow-2xl overflow-hidden">
-      {/* Lista de conversaciones */}
-      <div className="w-1/3 flex flex-col border-r border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-750">
-        {/* Header con Búsqueda y Filtros */}
-        <div className="p-4 space-y-3 border-b border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800">
-          <div className="relative">
-            <FaSearch className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-            <input 
-              type="text" 
-              placeholder="Buscar chat o contacto..." 
-              className="w-full p-2 pl-10 border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 outline-none transition-shadow shadow-sm"
-            />
-          </div>
-          {/* Placeholder para botones de filtro */}
-          <div className="flex space-x-2">
-            <button className="px-3 py-1 text-sm text-purple-700 bg-purple-100 rounded-full hover:bg-purple-200 transition">Todo</button>
-            <button className="px-3 py-1 text-sm text-slate-600 bg-slate-100 rounded-full hover:bg-slate-200 transition">No Leídos</button>
-            <button className="px-3 py-1 text-sm text-slate-600 bg-slate-100 rounded-full hover:bg-slate-200 transition flex items-center">
-              <FaWhatsapp className="mr-1 text-green-500"/> WhatsApp
-            </button>
-            {/* Add more source filters as needed, e.g., Instagram, Email */}
-          </div>
-        </div>
-        
-        {/* Lista de Chats */}
-        <div className="flex-grow overflow-y-auto divide-y divide-slate-200 dark:divide-slate-700">
-          {conversations && conversations.length > 0 ? (
-            conversations.map(chat => (
-              <div 
-                key={chat.id || chat.phoneNumber} 
-                className={`p-4 cursor-pointer transition-all duration-150 ease-in-out border-l-4 ${ 
-                  selectedChat?.id === chat.id 
-                    ? 'border-purple-600 bg-purple-50 dark:bg-slate-700' 
-                    : 'border-transparent hover:bg-slate-100 dark:hover:bg-slate-700'
-                }`}
-                onClick={() => selectChat(chat)}
-              >
-                <div className="flex items-center space-x-3">
-                  {/* Avatar */}
-                  <div className="relative flex-shrink-0">
-                    <div className="w-12 h-12 bg-gradient-to-br from-purple-500 to-blue-500 rounded-full flex items-center justify-center text-white text-xl font-semibold shadow-md">
-                      {chat.name ? chat.name.substring(0,1).toUpperCase() : <FaUser size={22}/>}
-                    </div>
-                    {/* Online status indicator (optional, if data available) */}
-                    {/* <span className={`absolute bottom-0 right-0 block h-3.5 w-3.5 rounded-full ring-2 ${selectedChat?.id === chat.id ? 'ring-purple-50 dark:ring-slate-700' : 'ring-slate-50 dark:ring-slate-750'} bg-green-400`} /> */}
-                  </div>
-                  
-                  <div className="flex-1 min-w-0">
-                    <div className="flex justify-between items-start">
-                      <p className="text-base font-semibold text-slate-800 dark:text-slate-100 truncate">
-                        {chat.name || formatPhoneNumber(chat.phoneNumber)}
-                      </p>
-                      <p className={`text-xs whitespace-nowrap ${selectedChat?.id === chat.id ? 'text-purple-700 dark:text-purple-300' : 'text-slate-400 dark:text-slate-500'}`}>
-                        {chat.lastMessageTimestamp ? new Date(chat.lastMessageTimestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : ''}
-                      </p>
-                    </div>
-                    <div className="flex justify-between items-center mt-1">
-                      <p className={`text-sm truncate ${selectedChat?.id === chat.id ? 'text-slate-600 dark:text-slate-300' : 'text-slate-500 dark:text-slate-400'}`}>
-                        {chat.lastMessage || 'Haz click para ver detalles'}
-                      </p>
-                      {chat.unreadCount > 0 && (
-                        <div className="bg-purple-600 text-white rounded-full min-w-[20px] h-5 flex items-center justify-center text-xs font-medium px-1.5 py-0.5 shadow">
-                          {chat.unreadCount}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            ))
-          ) : (
-            <div className="p-6 text-center text-slate-500">
-              <FaWhatsapp size={40} className="mx-auto mb-3 text-slate-400" />
-              <p className="font-medium">Bandeja de entrada vacía</p>
-              <p className="text-sm">No hay conversaciones activas en este momento.</p>
-              {/* <button className="mt-3 px-4 py-2 text-sm bg-purple-500 text-white rounded-lg hover:bg-purple-600 transition">
-                Cargar Conversaciones
-              </button> */}
-            </div>
-          )}
-        </div>
-      </div>
-      
-      {/* Panel de mensajes */}
-      <div className="w-2/3 flex flex-col bg-white dark:bg-slate-850">
-        {selectedChat ? (
-          <>
-            {/* Cabecera del chat mejorada */}
-            <div className="p-4 border-b border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 flex justify-between items-center shadow-sm">
-              <div className="flex items-center space-x-3">
-                 <div className="relative flex-shrink-0">
-                    <div className="w-11 h-11 bg-gradient-to-br from-purple-500 to-blue-500 rounded-full flex items-center justify-center text-white text-lg font-semibold shadow">
-                        {selectedChat.name ? selectedChat.name.substring(0,1).toUpperCase() : <FaUser size={20}/>}
-                    </div>
-                    {/* Example online indicator dot - logic for actual status needed separately */}
-                    {/* <span className="absolute bottom-0 right-0 block h-3 w-3 rounded-full bg-green-400 ring-2 ring-white dark:ring-slate-800" /> */} 
-                 </div>
-                <div>
-                  <h3 className="font-semibold text-slate-800 dark:text-slate-100 text-lg">
-                    {selectedChat.name || formatPhoneNumber(selectedChat.phoneNumber)}
-                  </h3>
-                  <p className={`text-xs ${connectionStatus === 'connected' && wsRef.current?.readyState === WebSocket.OPEN ? 'text-green-500' : 'text-slate-400'}`}>
-                     {connectionStatus === 'connected' && wsRef.current?.readyState === WebSocket.OPEN ? '● En línea' : '○ Desconectado'}
-                  </p>
-                </div>
-              </div>
-              <div className="flex items-center space-x-2">
-                <button 
-                  onClick={() => openAssignToKanbanModal(selectedChat)}
-                  className="px-4 py-2 bg-gradient-to-r from-purple-600 to-blue-500 hover:from-purple-700 hover:to-blue-600 text-white rounded-lg flex items-center text-sm transition-all shadow-md hover:shadow-lg focus:ring-4 focus:ring-purple-300"
-                  title="Asignar este chat a un tablero Kanban"
-                  disabled={!selectedChat.id}
-                >
-                  <FaTasks className="mr-2" /> Asignar
-                </button>
-                {/* Placeholder Action Icons */}
-                <button className="p-2 text-slate-500 dark:text-slate-400 hover:text-purple-600 dark:hover:text-purple-400 rounded-full hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors">
-                    <FaSearch size={18}/>
-                </button>
-                <button className="p-2 text-slate-500 dark:text-slate-400 hover:text-purple-600 dark:hover:text-purple-400 rounded-full hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors">
-                    <FaCog size={18}/>{/* Using FaCog as a general 'more options' placeholder */}
-                </button>
-              </div>
-            </div>
-            
-            {/* Área de mensajes */}
-            <div className="flex-1 overflow-y-auto p-6 space-y-4 bg-slate-100 dark:bg-slate-900">
-              {messages && messages.length > 0 ? (
-                messages.map(msg => (
-                  <div 
-                    key={msg.id || (String(msg.timestamp) + '-' + Math.random().toString(36).substr(2, 9))} 
-                    className={`flex ${msg.fromMe ? 'justify-end' : 'justify-start'}`}
-                  >
-                    <div className={`max-w-xl px-4 py-3 rounded-2xl shadow-md ${ 
-                      msg.fromMe 
-                        ? 'bg-gradient-to-br from-purple-600 to-blue-500 text-white rounded-br-lg' 
-                        : 'bg-white dark:bg-slate-700 text-slate-700 dark:text-slate-100 rounded-bl-lg border border-slate-200 dark:border-slate-600'
-                    }`}>
-                      <p className="text-sm whitespace-pre-wrap">{msg.body}</p>
-                      <p className={`text-xs mt-1.5 ${msg.fromMe ? 'text-purple-200 text-opacity-80' : 'text-slate-400 dark:text-slate-500'} text-right`}>
-                        {msg.timestamp ? new Date(msg.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : ''}
-                      </p>
-                    </div>
-                  </div>
-                ))
-              ) : (
-                <div className="flex justify-center items-center h-full text-slate-500">
-                  <FaCommentDots size={32} className="mx-auto mb-2" />
-                  <p>No hay mensajes en esta conversación.</p>
-                </div>
-              )}
-            </div>
-            
-            {/* Área de entrada de mensajes mejorada */}
-            <div className="p-4 border-t border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800">
-              <div className="flex items-center space-x-3 bg-slate-100 dark:bg-slate-700 p-1 rounded-xl">
-                <button className="p-3 text-slate-500 dark:text-slate-400 hover:text-purple-600 dark:hover:text-purple-400 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-600 transition-colors">
-                  <FaPaperclip size={20} />
-                </button>
-                <input 
-                  type="text" 
-                  placeholder="Escribe un mensaje..." 
-                  value={newMessage}
-                  onChange={(e) => setNewMessage(e.target.value)}
-                  onKeyPress={(e) => e.key === 'Enter' && !e.shiftKey ? (e.preventDefault(), sendMessage()) : null}
-                  className="flex-grow p-3 bg-transparent text-slate-700 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none"
-                />
-                <button 
-                  onClick={sendMessage} 
-                  disabled={!newMessage.trim() || connectionStatus !== 'connected' || wsRef.current?.readyState !== WebSocket.OPEN}
-                  className="p-3 rounded-lg bg-gradient-to-r from-purple-600 to-blue-500 hover:from-purple-700 hover:to-blue-600 text-white transition-all shadow-md hover:shadow-lg disabled:opacity-60 disabled:cursor-not-allowed flex items-center justify-center"
-                >
-                  <FaPaperPlane size={18} />
-                </button>
-              </div>
-            </div>
-          </>
-        ) : (
-          <div className="flex-1 flex flex-col items-center justify-center bg-slate-100 text-slate-500 p-8">
-            <FaWhatsapp size={56} className="mx-auto mb-5 text-slate-400" />
-            <h3 className="text-xl font-semibold mb-1">Tu Bandeja de Entrada CRM</h3>
-            <p className="text-center">Selecciona una conversación de la lista para ver los mensajes aquí.</p>
-            <p className="text-center text-sm mt-1">Gestiona todas tus interacciones en un solo lugar.</p>
-          </div>
-        )}
-      </div>
-    </div>
-  );
 
   // Componente de agentes
   const AgentsPanel = () => (
@@ -1147,11 +1211,76 @@ const WhatsAppCRM = ({ user }) => {
     </div>
   );
 
-  // Vista principal tipo Kanban
+  // <<< ADDED: Functions for managing name editing >>>
+  const handleEditNameClick = () => {
+    if (!selectedChat) return;
+    setEditingNameValue(selectedChat.contactDisplayName || selectedChat.name || '');
+    setIsEditingName(true);
+  };
+
+  const handleNameInputChange = (event) => {
+    setEditingNameValue(event.target.value);
+  };
+
+  const handleCancelEditName = () => {
+    setIsEditingName(false);
+    setEditingNameValue(''); // Clear the temp value
+  };
+
+  const handleSaveName = async () => {
+    if (!selectedChat || !selectedChat.id) return;
+    const trimmedName = editingNameValue.trim();
+    
+    // Optimistic UI Update & Local State
+    const originalName = selectedChat.contactDisplayName;
+    const updatedChat = { ...selectedChat, contactDisplayName: trimmedName };
+    setSelectedChat(updatedChat);
+    setConversations(prevConvos => 
+        prevConvos.map(convo => 
+            convo.id === selectedChat.id ? updatedChat : convo
+        )
+    );
+    setIsEditingName(false); // Exit edit mode immediately
+
+    try {
+      const endpoint = `/users/${user.uid}/chats/${selectedChat.id}/contact-name`;
+      const response = await apiCall(endpoint, 'PUT', { name: trimmedName });
+
+      if (!response.success) {
+        // Revert optimistic update on failure
+        console.error("Failed to save contact name:", response.message);
+        setErrorMessage(`Error al guardar nombre: ${response.message}`);
+        const revertedChat = { ...selectedChat, contactDisplayName: originalName }; // Use original name
+        setSelectedChat(revertedChat);
+        setConversations(prevConvos => 
+            prevConvos.map(convo => 
+                convo.id === selectedChat.id ? revertedChat : convo
+            )
+        );
+      } else {
+        console.log("Contact name saved successfully.");
+        // Optionally clear error message on success
+        // setErrorMessage(null);
+      }
+    } catch (error) {
+      console.error("Error saving contact name:", error);
+      setErrorMessage(`Error al guardar nombre: ${error.message}`);
+      // Revert optimistic update on catch
+      const revertedChatOnError = { ...selectedChat, contactDisplayName: originalName };
+      setSelectedChat(revertedChatOnError);
+      setConversations(prevConvos => 
+          prevConvos.map(convo => 
+              convo.id === selectedChat.id ? revertedChatOnError : convo
+          )
+      );
+    }
+  };
+
+  // Render the ChatInterface and pass down necessary props
   return (
-    <div className="h-full flex flex-col bg-slate-100 dark:bg-slate-900 text-slate-800 dark:text-slate-200 font-['Poppins'] rounded-3xl">
-      <div className="p-4 border-b border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 shadow-sm rounded-3xl">
-        <h2 className="text-2xl font-bold flex items-center text-slate-800 dark:text-slate-100">
+    <div className="h-full flex flex-col bg-slate-50 text-slate-900 font-['Poppins'] rounded-3xl">
+      <div className="p-4 border-b border-slate-200 bg-white shadow-sm rounded-t-3xl">
+        <h2 className="text-2xl font-bold flex items-center text-slate-800">
           <FaWhatsapp className="text-green-500 mr-3" />
           Bandeja de Entrada WhatsApp
         </h2>
@@ -1172,10 +1301,11 @@ const WhatsAppCRM = ({ user }) => {
       )}
       
       {/* Panel de información de conexión */}
-      <div className="bg-blue-100 dark:bg-sky-900 border-l-4 border-blue-500 dark:border-sky-400 text-blue-700 dark:text-sky-200 p-4 mx-4 mt-4 rounded-r-md shadow">
+      <div className="bg-blue-50 border-l-4 border-blue-400 text-blue-800 p-3 mx-4 mt-4 rounded-r-md shadow-sm text-sm">
         <p className="flex items-center">
-          <FaWhatsapp className="inline mr-2" /> 
-          Estado: {connectionStatus === 'connected' ? 'Conectado y Activo' : connectionStatus === 'connecting' ? 'Conectando...' : connectionStatus === 'reconnecting' ? 'Reconectando...' : connectionStatus === 'generating_qr' ? 'Generando QR...' : 'Desconectado'}
+          <FaWhatsapp className="inline mr-2 flex-shrink-0" /> 
+          <span className="mr-1 font-medium">Estado:</span>
+          {connectionStatus === 'connected' ? 'Conectado y Activo' : connectionStatus === 'connecting' ? 'Conectando...' : connectionStatus === 'reconnecting' ? 'Reconectando...' : connectionStatus === 'generating_qr' ? 'Generando QR...' : 'Desconectado'}
           {connectionStatus !== 'connected' && <span className="ml-2 text-xs">(Funcionalidad de envío/recepción limitada)</span>}
         </p>
       </div>
@@ -1188,83 +1318,113 @@ const WhatsAppCRM = ({ user }) => {
               Se espera que ChatInterface maneje su propia altura interna con h-full 
               y que sus componentes internos (lista de chats, panel de mensajes) sean scrollables.
           */}
-          <ChatInterface />
+           {/* Pass required state and functions as props */}
+          <ChatInterface 
+            conversations={conversations}
+            selectedChat={selectedChat}
+            selectChat={selectChat}
+            messages={messages}
+            newMessage={newMessage}
+            setNewMessage={setNewMessage}
+            sendMessage={sendMessage}
+            openAssignToKanbanModal={openAssignToKanbanModal}
+            formatPhoneNumber={formatPhoneNumber}
+            connectionStatus={connectionStatus}
+            wsRef={wsRef} // Pass the WebSocket ref
+            isEditingName={isEditingName}
+            editingNameValue={editingNameValue}
+            handleEditNameClick={handleEditNameClick}
+            handleNameInputChange={handleNameInputChange}
+            handleSaveName={handleSaveName}
+            handleCancelEditName={handleCancelEditName}
+          />
         </div>
       </div>
 
       {/* Modal para asignar Chat a Kanban */}
-      {assignModalState.isOpen && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-xl w-full max-w-md">
-            <h3 className="text-xl font-semibold mb-4 text-gray-800 dark:text-white">Asignar Chat a Kanban</h3>
-            {assignModalState.chat && (
-              <p className="mb-4 text-sm text-gray-600 dark:text-gray-300">
-                Asignar: <strong>{assignModalState.chat.name || formatPhoneNumber(assignModalState.chat.phoneNumber)}</strong>
-              </p>
-            )}
-
-            {assignModalState.error && (
-              <p className="mb-4 text-sm text-red-500 bg-red-100 dark:bg-red-900 dark:text-red-300 p-2 rounded">{assignModalState.error}</p>
-            )}
-            {assignModalState.successMessage && (
-              <p className="mb-4 text-sm text-green-500 bg-green-100 dark:bg-green-900 dark:text-green-300 p-2 rounded">{assignModalState.successMessage}</p>
-            )}
+      {assignModalState.isOpen && assignModalState.chat && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-50 backdrop-blur-sm">
+        <div className="bg-white rounded-lg shadow-xl p-6 w-full max-w-md mx-4 relative">
+          <button 
+                onClick={closeAssignModal} 
+                className="absolute top-2 right-2 text-slate-400 hover:text-slate-600"
+          >
+                <FaTimes size={20}/>
+          </button>
+            <h3 className="text-lg font-semibold text-slate-800 mb-4">Asignar Chat a Kanban</h3>
+            
+            {/* <<< ADDED: Contact Name Input >>> */}
+            <div className="mb-4">
+                <label htmlFor="contactNameInput" className="block text-sm font-medium text-slate-700 mb-1">Nombre del Contacto</label>
+                <input
+                    type="text"
+                    id="contactNameInput"
+                    value={assignModalState.currentContactName} // Use state for controlled input
+                    onChange={(e) => setAssignModalState(prev => ({ ...prev, currentContactName: e.target.value }))}
+                    placeholder="Ej: Juan Pérez (Opcional)"
+                    className="w-full px-3 py-2 border border-slate-300 rounded-md shadow-sm focus:outline-none focus:ring-purple-500 focus:border-purple-500 text-sm"
+                />
+      </div>
 
             <div className="mb-4">
-              <label htmlFor="kanban-board-select" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Tablero Kanban:</label>
-              {assignModalState.isLoadingBoards ? (
-                <div className="flex items-center text-gray-500 dark:text-gray-400"><FaSpinner className="animate-spin mr-2" /> Cargando tableros...</div>
-              ) : (
+            <label htmlFor="kanbanBoardSelect" className="block text-sm font-medium text-slate-700 mb-1">Seleccionar Tablero</label>
                 <select
-                  id="kanban-board-select"
+                id="kanbanBoardSelect"
                   value={assignModalState.selectedBoardId}
                   onChange={(e) => handleBoardSelectedInModal(e.target.value)}
-                  className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-blue-500 focus:border-blue-500"
-                  disabled={assignModalState.boards.length === 0}
+                className="w-full px-3 py-2 border border-slate-300 rounded-md shadow-sm focus:outline-none focus:ring-purple-500 focus:border-purple-500 text-sm bg-white"
                 >
-                  <option value="">{assignModalState.boards.length === 0 ? "No hay tableros disponibles" : "Seleccione un tablero"}</option>
+                <option value="">-- Selecciona un tablero --</option>
                   {assignModalState.boards.map(board => (
                     <option key={board.id} value={board.id}>{board.name}</option>
                   ))}
                 </select>
-              )}
             </div>
 
-            {assignModalState.selectedBoardId && (
+            {assignModalState.columns.length > 0 && (
               <div className="mb-6">
-                <label htmlFor="kanban-column-select" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Columna:</label>
-                {assignModalState.isLoadingColumns ? (
-                  <div className="flex items-center text-gray-500 dark:text-gray-400"><FaSpinner className="animate-spin mr-2" /> Cargando columnas...</div>
-                ) : (
+                <label htmlFor="kanbanColumnSelect" className="block text-sm font-medium text-slate-700 mb-1">Seleccionar Columna</label>
                   <select
-                    id="kanban-column-select"
+                    id="kanbanColumnSelect"
                     value={assignModalState.selectedColumnId}
                     onChange={(e) => setAssignModalState(prev => ({ ...prev, selectedColumnId: e.target.value }))}
-                    className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-blue-500 focus:border-blue-500"
-                    disabled={!assignModalState.selectedBoardId || assignModalState.columns.length === 0}
+                    disabled={!assignModalState.selectedBoardId} // Disable if no board selected
+                    className="w-full px-3 py-2 border border-slate-300 rounded-md shadow-sm focus:outline-none focus:ring-purple-500 focus:border-purple-500 text-sm bg-white disabled:bg-slate-50"
                   >
-                    <option value="">{assignModalState.columns.length === 0 && assignModalState.selectedBoardId ? "No hay columnas en este tablero" : "Seleccione una columna"}</option>
+                <option value="">-- Mover a esta columna --</option>
                     {assignModalState.columns.map(column => (
                       <option key={column.id} value={column.id}>{column.name}</option>
                     ))}
                   </select>
+            </div>
                 )}
+
+            {assignModalState.isLoading && (
+                <div className="flex justify-center items-center mb-4">
+                    <FaSpinner className="animate-spin mr-2 text-purple-500" />
+                    <span>Cargando...</span>
               </div>
+            )}
+            {assignModalState.errorMessage && (
+                <p className="text-red-600 text-sm mb-4">Error: {assignModalState.errorMessage}</p>
+            )}
+             {assignModalState.successMessage && (
+                <p className="text-green-600 text-sm mb-4">{assignModalState.successMessage}</p>
             )}
 
             <div className="flex justify-end space-x-3">
               <button
                 onClick={closeAssignModal}
-                className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-600 hover:bg-gray-200 dark:hover:bg-gray-500 rounded-md focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500"
+                className="px-4 py-2 bg-slate-200 text-slate-700 rounded-md hover:bg-slate-300 transition text-sm font-medium"
               >
                 Cancelar
               </button>
               <button
                 onClick={handleAssignConfirm}
-                disabled={!assignModalState.selectedBoardId || !assignModalState.selectedColumnId || assignModalState.isLoadingBoards || assignModalState.isLoadingColumns}
-                className="px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-md focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50"
+                disabled={!assignModalState.selectedBoardId || !assignModalState.selectedColumnId || assignModalState.isLoading}
+                className="px-4 py-2 bg-purple-600 text-white rounded-md hover:bg-purple-700 transition text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                Asignar Chat
+                {assignModalState.isLoading ? 'Asignando...' : 'Confirmar Asignación'}
               </button>
             </div>
           </div>

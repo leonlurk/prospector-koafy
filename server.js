@@ -912,10 +912,62 @@ app.post('/users/:userId/send-message', async (req, res) => {
         return res.status(400).json({ success: false, message: 'Número y mensaje son requeridos.' });
     }
 
+    // --- MODIFIED: Check Firestore status instead of worker process connection ---
+    try {
+        // Get the status from the specific subcollection
+        const statusDocRef = firestoreDb.collection('users').doc(userId).collection('status').doc('whatsapp');
+        const statusDocSnap = await statusDocRef.get();
+
+        let currentStatus = 'unknown';
+        let isConnected = false;
+
+        if (statusDocSnap.exists) {
+            currentStatus = statusDocSnap.data().status;
+            isConnected = currentStatus === 'connected';
+            console.log(`[Server][Send Message Check] Firestore status for ${userId}: ${currentStatus}`);
+        } else {
+            // If status doc doesn't exist, assume not connected
+            console.warn(`[Server][Send Message Check] Firestore status document not found for ${userId}. Assuming not connected.`);
+            currentStatus = 'not_found'; // Indicate status doc missing
+        }
+
+        // Check if the status fetched from Firestore is 'connected'
+        if (!isConnected) {
+            console.warn(`[Server] Intento de enviar mensaje para ${userId} pero estado Firestore NO es 'connected' (es: ${currentStatus}).`);
+            return res.status(400).json({ success: false, message: `Worker para usuario ${userId} no está activo (estado: ${currentStatus}). Conéctese primero.` });
+        }
+
+        // Check if the worker process *itself* exists in memory (still needed for IPC)
+        if (!workers[userId] || !workers[userId].connected) {
+             console.error(`[Server][Send Message Check] Error: Firestore status is 'connected' for ${userId}, but worker process is missing or IPC disconnected!`);
+             // Attempt to clean up inconsistent state?
+             // For now, return an error indicating internal inconsistency.
+             return res.status(500).json({ success: false, message: 'Error interno: Inconsistencia entre estado y proceso worker.' });
+        }
+
+        // If Firestore status is 'connected' AND worker process exists, proceed
+        console.log(`[Server][Send Message Check] Firestore status 'connected' and worker process found for ${userId}. Proceeding with IPC.`);
+
+        // Enviar comando al worker vía IPC
+        workers[userId].send({
+            type: 'COMMAND',
+            command: 'SEND_MESSAGE',
+            payload: { number: number.trim(), message: message.trim() }
+        });
+        res.status(202).json({ success: true, message: 'Comando de envío de mensaje enviado al worker.' });
+
+    } catch (err) {
+        console.error("[Server][Firestore Error] Error verificando estado antes de enviar mensaje:", err);
+        return res.status(500).json({ success: false, message: 'Error interno verificando estado.' });
+    }
+    // --- END MODIFICATION ---
+
+    /* // Código anterior basado en workers[userId].connected
     // Verificar si el worker está activo y conectado
     if (!workers[userId] || !workers[userId].connected) {
         console.warn(`[Server] Intento de enviar mensaje para ${userId} pero worker no está activo/conectado.`);
         try {
+            // Busca en el documento principal, no en la subcolección de estado
             const docSnap = await firestoreDb.collection('users').doc(userId).get();
             const currentStatus = docSnap.exists ? docSnap.data().status : 'unknown';
             return res.status(400).json({ success: false, message: `Worker para usuario ${userId} no está activo (estado: ${currentStatus}). Conéctese primero.` });
@@ -937,6 +989,7 @@ app.post('/users/:userId/send-message', async (req, res) => {
         console.error(`[Server] Error enviando comando SEND_MESSAGE a worker ${userId}:`, ipcError);
         res.status(500).json({ success: false, message: 'Error interno al comunicarse con el worker.' });
     }
+    */
 });
 // --- Fin Reemplazo Firestore ---
 /* app.post('/users/:userId/send-message', (req, res) => {
@@ -1585,20 +1638,24 @@ app.get('/users/:userId/chats', async (req, res) => {
         const chats = [];
         chatsSnapshot.forEach(doc => {
             const data = doc.data();
-            const chatId = doc.id; // The document ID is the chatId (e.g., 1234567890@c.us)
+            const chatId = doc.id; 
 
-            // Extract relevant info, ensure fields exist
             const lastMessageTimestamp = data.lastMessageTimestamp?.toDate ? data.lastMessageTimestamp.toDate().toISOString() : null;
 
-            // Basic contact info (can be expanded later)
-            let contactName = data.contactName || chatId; // Use chatId as default name
+            // <<< MODIFIED: Use contactDisplayName if available >>>
+            let contactName = data.contactDisplayName || data.contactName || chatId; // Fallback chain
 
             chats.push({
                 chatId: chatId,
-                contactName: contactName, // Placeholder for actual contact name logic
+                // <<< MODIFIED: Use the determined contactName >>>
+                contactName: contactName, 
+                // <<< ADDED: Explicitly include contactDisplayName for potential frontend use >>>
+                contactDisplayName: data.contactDisplayName || null,
                 lastMessageContent: data.lastMessageContent || '',
                 lastMessageTimestamp: lastMessageTimestamp,
-                // Add other fields like unread count if tracked later
+                // Add kanban info if needed for inbox filtering/display
+                kanbanBoardId: data.kanbanBoardId || null,
+                kanbanColumnId: data.kanbanColumnId || null,
             });
         });
 
@@ -1615,23 +1672,28 @@ app.get('/users/:userId/chats', async (req, res) => {
 // <<< ADDED: API Endpoint to Get Messages for a Chat >>>
 app.get('/users/:userId/chats/:chatId/messages', async (req, res) => {
     const { userId, chatId } = req.params;
-    // Pagination parameters (example)
+    // <<< RE-ADDED limit const >>>
     const limit = parseInt(req.query.limit) || 50; // Default limit 50 messages
     const beforeTimestampStr = req.query.before; // ISO string timestamp
 
+    // <<< UPDATED LOG to show limit >>>
     console.log(`[Server] GET /users/${userId}/chats/${chatId}/messages (limit: ${limit}, before: ${beforeTimestampStr})`);
 
     try {
         const chatDocRef = firestoreDb.collection('users').doc(userId).collection('chats').doc(chatId);
         const messagesRef = chatDocRef.collection('messages_all'); // Query the unified collection
 
-        let query = messagesRef.orderBy('timestamp', 'desc'); // Get newest first for typical chat view
+        // <<< KEPT: Order by timestamp ASC (oldest first of the batch) >>>
+        let query = messagesRef.orderBy('timestamp', 'asc'); 
 
         // Apply cursor for pagination if 'before' timestamp is provided
+        // NOTE: 'before' logic might need adjustment if implementing infinite scroll loading older messages
         if (beforeTimestampStr) {
             try {
                 const beforeTimestamp = admin.firestore.Timestamp.fromDate(new Date(beforeTimestampStr));
-                query = query.startAfter(beforeTimestamp); // Fetch messages *before* this timestamp (older)
+                 // If loading older messages, you'd use endBefore() typically.
+                 // For loading the initial batch OR newer messages, startAfter is okay.
+                query = query.startAfter(beforeTimestamp); 
                 console.log(`   -> Paginating: starting after ${beforeTimestampStr}`);
             } catch (dateErr) {
                 console.warn(`[Server] Invalid 'before' timestamp format: ${beforeTimestampStr}. Ignoring pagination.`);
@@ -1639,30 +1701,50 @@ app.get('/users/:userId/chats/:chatId/messages', async (req, res) => {
             }
         }
 
+        // <<< RE-ADDED: query.limit(limit); >>>
         query = query.limit(limit);
 
         const messagesSnapshot = await query.get();
 
-        const messages = [];
-        messagesSnapshot.forEach(doc => {
+        const messages = messagesSnapshot.docs.map(doc => {
             const data = doc.data();
-            const messageTimestamp = data.timestamp?.toDate ? data.timestamp.toDate().toISOString() : null;
-
-            messages.push({
-                id: doc.id, // Firestore document ID
-                messageId: data.messageId || null, // WhatsApp message ID if available
-                body: data.body || '',
-                timestamp: messageTimestamp,
-                from: data.from || 'unknown',
-                to: data.to || 'unknown',
-                isFromMe: data.isFromMe || false,
-                origin: data.origin || 'unknown', // 'human', 'bot', 'contact', 'unknown'
-                // Add other fields like 'ack' status if needed
-            });
+            // <<< MODIFIED: Ensure 'isFromMe' from Firestore becomes 'fromMe' in response >>>
+            return {
+                id: doc.id, 
+                ack: data.ack,
+                body: data.body,
+                from: data.from,
+                fromMe: data.isFromMe || false, // Explicitly map isFromMe to fromMe, default to false if missing
+                hasMedia: data.hasMedia || false, // Include hasMedia field
+                hasReacted: data.hasReacted || false,
+                hasSticker: data.hasSticker || false,
+                inviteV4: data.inviteV4, 
+                isEphemeral: data.isEphemeral || false,
+                isForwarded: data.isForwarded || false,
+                isGif: data.isGif || false, 
+                isStarred: data.isStarred || false,
+                isStatus: data.isStatus || false,
+                mediaKey: data.mediaKey,
+                mentionedIds: data.mentionedIds || [],
+                origin: data.origin, // Keep origin
+                // participant: data.participant, // Usually not needed if from/to is clear
+                reaction: data.reaction,
+                status: data.status, // Keep status
+                // subtype: data.subtype, // Potentially useful
+                t: data.t, // Keep t (sequence?)
+                timestamp: data.timestamp?.toDate ? data.timestamp.toDate().toISOString() : data.timestamp, // Convert Firestore Timestamp
+                to: data.to,
+                type: data.type,
+                vCards: data.vCards || [],
+                _data: undefined // Remove internal _data if present
+            };
         });
 
-        // Note: Messages are currently newest first due to orderBy('desc').
-        // Frontend might need to reverse this array for display (oldest at top).
+        // Sort messages by timestamp ascending (oldest first)
+        messages.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+
+        console.log(`[Server] GET /users/${userId}/chats/${chatId}/messages - Returning ${messages.length} messages (limited to ${limit}). First message 'fromMe': ${messages.length > 0 ? messages[0].fromMe : 'N/A'}`); // <<< UPDATED LOG >>>
+
         res.json({ success: true, data: messages });
 
     } catch (err) {
@@ -1679,6 +1761,39 @@ app.get('/users/:userId/chats/:chatId/messages', async (req, res) => {
     }
 });
 // <<< END: API Endpoint to Get Messages for a Chat >>>
+
+// <<< NEW: API Endpoint to Update Contact Display Name >>>
+app.put('/users/:userId/chats/:chatId/contact-name', async (req, res) => {
+    const { userId, chatId } = req.params;
+    const { name } = req.body;
+    console.log(`[Server] PUT /users/${userId}/chats/${chatId}/contact-name - Setting name to: ${name}`);
+
+    if (name === undefined || typeof name !== 'string') { // Allow empty string to clear the name
+        return res.status(400).json({ success: false, message: 'El campo "name" (string) es requerido en el body.' });
+    }
+
+    const chatDocRef = firestoreDb.collection('users').doc(userId).collection('chats').doc(chatId);
+
+    try {
+        const chatDocSnap = await chatDocRef.get();
+        if (!chatDocSnap.exists) {
+            return res.status(404).json({ success: false, message: 'Chat no encontrado.' });
+        }
+
+        await chatDocRef.update({
+            contactDisplayName: name.trim(), // Store the trimmed name
+            updatedAt: admin.firestore.FieldValue.serverTimestamp()
+        });
+
+        console.log(`[Server] Contact display name for chat ${chatId} updated to "${name.trim()}".`);
+        res.json({ success: true, message: 'Nombre del contacto actualizado con éxito.', contactDisplayName: name.trim() });
+
+    } catch (err) {
+        console.error(`[Server][Firestore Error] Actualizando nombre de contacto para chat ${chatId}:`, err);
+        res.status(500).json({ success: false, message: 'Error interno al actualizar el nombre del contacto.' });
+    }
+});
+// <<< END: NEW API Endpoint to Update Contact Display Name >>>
 
 // === INICIALIZACIÓN DEL SERVIDOR Y CIERRE LIMPIO ===
 try {
@@ -2116,14 +2231,24 @@ app.get('/users/:userId/kanban-boards', async (req, res) => {
         }
 
         const boardsSnapshot = await userDocRef.collection('kanban_boards').orderBy('createdAt', 'desc').get();
-        const boards = [];
-        boardsSnapshot.forEach(doc => {
+        
+        // Use Promise.all to fetch column counts concurrently
+        const boardsPromises = boardsSnapshot.docs.map(async (doc) => {
             const data = doc.data();
             // Convertir timestamps si es necesario
             if (data.createdAt?.toDate) data.createdAt = data.createdAt.toDate().toISOString();
             if (data.updatedAt?.toDate) data.updatedAt = data.updatedAt.toDate().toISOString();
-            boards.push(data);
+            
+            // Fetch the column count for this specific board
+            const columnsRef = doc.ref.collection('columns');
+            const columnsSnapshot = await columnsRef.get();
+            data.live_columns_count = columnsSnapshot.size; // Add the live count
+            
+            return data; // Return the enriched data
         });
+
+        const boards = await Promise.all(boardsPromises); // Wait for all counts to be fetched
+
         res.json({ success: true, data: boards });
     } catch (err) {
         console.error(`[Server][Firestore Error] Listando tableros Kanban para ${userId}:`, err);
@@ -2395,15 +2520,21 @@ app.delete('/users/:userId/kanban-boards/:boardId/columns/:columnId', async (req
 // PUT /users/:userId/chats/:chatId/assign-kanban-column - Asignar un chat a una columna Kanban
 app.put('/users/:userId/chats/:chatId/assign-kanban-column', async (req, res) => {
     const { userId, chatId } = req.params;
-    const { boardId, columnId } = req.body; // columnId puede ser null para desasignar
+    // <<< MODIFIED: Destructure contactName from body >>>
+    const { boardId, columnId, contactName } = req.body; 
 
-    console.log(`[Server] PUT /users/${userId}/chats/${chatId}/assign-kanban-column - Board: ${boardId}, Column: ${columnId}`);
+    // <<< MODIFIED LOG to include contactName >>>
+    console.log(`[Server] PUT /users/${userId}/chats/${chatId}/assign-kanban-column - Board: ${boardId}, Column: ${columnId}, ContactName: ${contactName}`);
 
-    if (!boardId && columnId) { // Si se da columnId, boardId es obligatorio
+    if (!boardId && columnId) {
         return res.status(400).json({ success: false, message: 'Se requiere boardId si se especifica columnId.' });
     }
-    // Si solo se da boardId y columnId es null/undefined, es para desasignar de una columna pero mantener en el tablero (o limpiar ambos)
-    // Si no se da boardId ni columnId, la acción es ambigua, pero la actualizaremos a null ambos.
+    
+    // <<< ADDED: Validate contactName if provided >>>
+    if (contactName !== undefined && typeof contactName !== 'string') {
+        return res.status(400).json({ success: false, message: 'Si se provee "contactName", debe ser un string.' });
+    }
+
 
     const chatDocRef = firestoreDb.collection('users').doc(userId).collection('chats').doc(chatId);
 
@@ -2413,35 +2544,42 @@ app.put('/users/:userId/chats/:chatId/assign-kanban-column', async (req, res) =>
             return res.status(404).json({ success: false, message: 'Chat no encontrado.' });
         }
 
-        if (boardId && columnId) { // Solo validar columna si se está asignando a una específica
+        if (boardId && columnId) { 
             const columnDocRef = firestoreDb.collection('users').doc(userId)
                                          .collection('kanban_boards').doc(boardId)
                                          .collection('columns').doc(columnId);
             const columnDocSnap = await columnDocRef.get();
-            if (!columnDocSnap.exists) { // Esto también implica que el board existe si la columna existe
+            if (!columnDocSnap.exists) { 
                 return res.status(404).json({ success: false, message: 'Columna Kanban o Tablero no encontrado.' });
             }
-        } else if (boardId && !columnId) { // Validar que el tablero exista si se está intentando desasignar de una columna en un tablero específico
+        } else if (boardId && !columnId) { 
             const boardToValidateRef = firestoreDb.collection('users').doc(userId).collection('kanban_boards').doc(boardId);
             const boardToValidateSnap = await boardToValidateRef.get();
             if (!boardToValidateSnap.exists) {
                  return res.status(404).json({ success: false, message: 'Tablero Kanban no encontrado para desasignar la columna.' });
             }
         }
-        // Si ni boardId ni columnId se proporcionan, se limpiarán ambos campos en el chat.
 
-        await chatDocRef.update({
+        // <<< MODIFIED: Prepare updateData object >>>
+        const updateData = {
             kanbanBoardId: boardId || null, 
-            kanbanColumnId: (boardId && columnId) ? columnId : null, // Solo asignar columnId si boardId también está presente
+            kanbanColumnId: (boardId && columnId) ? columnId : null,
             updatedAt: admin.firestore.FieldValue.serverTimestamp() 
-        });
+        };
 
-        console.log(`[Server] Chat ${chatId} asignado a tablero ${boardId || 'ninguno'}, columna ${columnId || 'ninguna'}.`);
+        // <<< ADDED: Conditionally add contactDisplayName to updateData >>>
+        if (contactName !== undefined) {
+            updateData.contactDisplayName = contactName.trim();
+        }
+
+        await chatDocRef.update(updateData);
+
+        console.log(`[Server] Chat ${chatId} asignado a tablero ${boardId || 'ninguno'}, columna ${columnId || 'ninguna'}. Nombre de contacto actualizado si se proporcionó.`);
         res.json({ success: true, message: `Chat asignado a columna ${columnId || 'ninguna'} en tablero ${boardId || 'ninguno'}.` });
 
     } catch (err) {
         console.error(`[Server][Firestore Error] Asignando chat ${chatId} a Kanban:`, err);
-        if (err.code === 5) { // Firestore NOT_FOUND (podría ser el chat durante el get inicial)
+        if (err.code === 5) { 
             return res.status(404).json({ success: false, message: 'Error: Chat, tablero o columna no encontrado.' });
         }
         res.status(500).json({ success: false, message: 'Error interno al asignar chat a columna Kanban.' });
@@ -2496,6 +2634,9 @@ app.get('/users/:userId/kanban-boards/:boardId/chats-by-column', async (req, res
             if (chatData.lastMessageTimestamp?.toDate) chatData.lastMessageTimestamp = chatData.lastMessageTimestamp.toDate().toISOString();
             if (chatData.createdAt?.toDate) chatData.createdAt = chatData.createdAt.toDate().toISOString();
             if (chatData.updatedAt?.toDate) chatData.updatedAt = chatData.updatedAt.toDate().toISOString();
+
+            // <<< ADDED: Include contactDisplayName in chatData for Kanban card >>>
+            chatData.contactDisplayName = chatData.contactDisplayName || null; 
 
             if (assignedColumnId && columnsMap.has(assignedColumnId)) {
                 columnsMap.get(assignedColumnId).chats.push(chatData);
