@@ -2060,3 +2060,494 @@ IMPORTANTE:
     }
 });
 // === FIN ENDPOINT PARA PREGUNTAS DE SEGUIMIENTO ===
+
+// === Rutas para Gestión de Kanban (CRM) ===
+
+// --- Gestión de Tableros Kanban ---
+
+// POST /users/:userId/kanban-boards - Crear un nuevo tablero Kanban
+app.post('/users/:userId/kanban-boards', async (req, res) => {
+    const userId = req.params.userId;
+    const { name } = req.body;
+    console.log(`[Server] POST /users/${userId}/kanban-boards - Creando tablero: ${name}`);
+
+    if (!name || !name.trim()) {
+        return res.status(400).json({ success: false, message: 'El nombre del tablero es requerido.' });
+    }
+
+    const userDocRef = firestoreDb.collection('users').doc(userId);
+    const boardsCollectionRef = userDocRef.collection('kanban_boards');
+
+    try {
+        const userDocSnap = await userDocRef.get();
+        if (!userDocSnap.exists) {
+            return res.status(404).json({ success: false, message: 'Usuario no encontrado.' });
+        }
+
+        const boardId = uuidv4();
+        const timestamp = admin.firestore.FieldValue.serverTimestamp();
+        const newBoard = {
+            id: boardId,
+            name: name.trim(),
+            columns_order: [], // Inicialmente sin columnas ordenadas
+            createdAt: timestamp,
+            updatedAt: timestamp
+        };
+
+        await boardsCollectionRef.doc(boardId).set(newBoard);
+        console.log(`[Server] Tablero Kanban creado para ${userId}: ${boardId} - ${newBoard.name}`);
+        res.status(201).json({ success: true, message: 'Tablero Kanban creado.', data: newBoard });
+
+    } catch (err) {
+        console.error(`[Server][Firestore Error] Creando tablero Kanban para ${userId}:`, err);
+        res.status(500).json({ success: false, message: 'Error interno al crear el tablero Kanban.' });
+    }
+});
+
+// GET /users/:userId/kanban-boards - Listar todos los tableros Kanban de un usuario
+app.get('/users/:userId/kanban-boards', async (req, res) => {
+    const userId = req.params.userId;
+    console.log(`[Server] GET /users/${userId}/kanban-boards`);
+    try {
+        const userDocRef = firestoreDb.collection('users').doc(userId);
+        const userDocSnap = await userDocRef.get();
+        if (!userDocSnap.exists) {
+            return res.status(404).json({ success: false, message: 'Usuario no encontrado.' });
+        }
+
+        const boardsSnapshot = await userDocRef.collection('kanban_boards').orderBy('createdAt', 'desc').get();
+        const boards = [];
+        boardsSnapshot.forEach(doc => {
+            const data = doc.data();
+            // Convertir timestamps si es necesario
+            if (data.createdAt?.toDate) data.createdAt = data.createdAt.toDate().toISOString();
+            if (data.updatedAt?.toDate) data.updatedAt = data.updatedAt.toDate().toISOString();
+            boards.push(data);
+        });
+        res.json({ success: true, data: boards });
+    } catch (err) {
+        console.error(`[Server][Firestore Error] Listando tableros Kanban para ${userId}:`, err);
+        res.status(500).json({ success: false, message: 'Error interno al listar tableros Kanban.' });
+    }
+});
+
+// GET /users/:userId/kanban-boards/:boardId - Obtener un tablero Kanban específico
+app.get('/users/:userId/kanban-boards/:boardId', async (req, res) => {
+    const { userId, boardId } = req.params;
+    console.log(`[Server] GET /users/${userId}/kanban-boards/${boardId}`);
+    try {
+        const boardDocRef = firestoreDb.collection('users').doc(userId).collection('kanban_boards').doc(boardId);
+        const docSnap = await boardDocRef.get();
+
+        if (!docSnap.exists) {
+            return res.status(404).json({ success: false, message: 'Tablero Kanban no encontrado.' });
+        }
+        const data = docSnap.data();
+        if (data.createdAt?.toDate) data.createdAt = data.createdAt.toDate().toISOString();
+        if (data.updatedAt?.toDate) data.updatedAt = data.updatedAt.toDate().toISOString();
+        res.json({ success: true, data: data });
+    } catch (err) {
+        console.error(`[Server][Firestore Error] Obteniendo tablero ${boardId} para ${userId}:`, err);
+        res.status(500).json({ success: false, message: 'Error interno al obtener el tablero.' });
+    }
+});
+
+// PUT /users/:userId/kanban-boards/:boardId - Actualizar un tablero Kanban
+app.put('/users/:userId/kanban-boards/:boardId', async (req, res) => {
+    const { userId, boardId } = req.params;
+    const { name, columns_order } = req.body;
+    console.log(`[Server] PUT /users/${userId}/kanban-boards/${boardId}`);
+
+    if (!name && !columns_order) {
+        return res.status(400).json({ success: false, message: 'Se requiere al menos un campo para actualizar (name o columns_order).' });
+    }
+
+    const boardDocRef = firestoreDb.collection('users').doc(userId).collection('kanban_boards').doc(boardId);
+
+    try {
+        const updateData = {};
+        if (name && name.trim()) {
+            updateData.name = name.trim();
+        }
+        if (columns_order && Array.isArray(columns_order)) { // Validar que sea un array
+            updateData.columns_order = columns_order;
+        }
+        if (Object.keys(updateData).length === 0) {
+             return res.status(400).json({ success: false, message: 'Ningún dato válido proporcionado para la actualización.' });
+        }
+
+        updateData.updatedAt = admin.firestore.FieldValue.serverTimestamp();
+
+        await boardDocRef.update(updateData);
+        console.log(`[Server] Tablero Kanban actualizado para ${userId}: ${boardId}`);
+        const updatedDocSnap = await boardDocRef.get();
+        res.json({ success: true, message: 'Tablero Kanban actualizado.', data: updatedDocSnap.data() });
+
+    } catch (err) {
+        console.error(`[Server][Firestore Error] Actualizando tablero ${boardId} para ${userId}:`, err);
+        if (err.code === 5) { // Firestore NOT_FOUND
+            return res.status(404).json({ success: false, message: 'Tablero Kanban no encontrado para actualizar.' });
+        }
+        res.status(500).json({ success: false, message: 'Error interno al actualizar el tablero.' });
+    }
+});
+
+// DELETE /users/:userId/kanban-boards/:boardId - Eliminar un tablero Kanban
+// (Nota: Esto no elimina las columnas asociadas por ahora, considerar borrado en cascada si es necesario)
+app.delete('/users/:userId/kanban-boards/:boardId', async (req, res) => {
+    const { userId, boardId } = req.params;
+    console.log(`[Server] DELETE /users/${userId}/kanban-boards/${boardId}`);
+    const boardDocRef = firestoreDb.collection('users').doc(userId).collection('kanban_boards').doc(boardId);
+
+    try {
+        const docSnap = await boardDocRef.get();
+        if (!docSnap.exists) {
+            return res.status(404).json({ success: false, message: 'Tablero Kanban no encontrado.' });
+        }
+        
+        // Opcional: Eliminar columnas asociadas aquí si se desea un borrado en cascada.
+        // Por ahora, solo se elimina el tablero. Los chats permanecerían con kanbanBoardId.
+        // const columnsRef = boardDocRef.collection('columns');
+        // const columnsSnapshot = await columnsRef.get();
+        // const deletePromises = [];
+        // columnsSnapshot.forEach(doc => deletePromises.push(doc.ref.delete()));
+        // await Promise.all(deletePromises);
+        // console.log(`[Server] Columnas del tablero ${boardId} eliminadas.`);
+
+        await boardDocRef.delete();
+        console.log(`[Server] Tablero Kanban eliminado de Firestore: ${boardId} para ${userId}`);
+        // También se podría querer desvincular chats de este tablero (kanbanBoardId = null)
+        res.json({ success: true, message: 'Tablero Kanban eliminado.' });
+    } catch (err) {
+        console.error(`[Server][Firestore Error] Eliminando tablero ${boardId} para ${userId}:`, err);
+        res.status(500).json({ success: false, message: 'Error interno al eliminar el tablero.' });
+    }
+});
+
+// --- Gestión de Columnas Kanban ---
+
+// POST /users/:userId/kanban-boards/:boardId/columns - Crear una nueva columna
+app.post('/users/:userId/kanban-boards/:boardId/columns', async (req, res) => {
+    const { userId, boardId } = req.params;
+    const { name, stageType } = req.body; // Added stageType
+    console.log(`[Server] POST /users/${userId}/kanban-boards/${boardId}/columns - Creando columna: ${name}, Tipo Etapa: ${stageType || 'No definido'}`);
+
+    if (!name || !name.trim()) {
+        return res.status(400).json({ success: false, message: 'El nombre de la columna es requerido.' });
+    }
+
+    const boardDocRef = firestoreDb.collection('users').doc(userId).collection('kanban_boards').doc(boardId);
+    const columnsCollectionRef = boardDocRef.collection('columns');
+
+    try {
+        const boardDocSnap = await boardDocRef.get();
+        if (!boardDocSnap.exists) {
+            return res.status(404).json({ success: false, message: 'Tablero Kanban no encontrado para añadir columna.' });
+        }
+
+        const columnId = uuidv4();
+        const timestamp = admin.firestore.FieldValue.serverTimestamp();
+        const newColumn = {
+            id: columnId,
+            name: name.trim(),
+            stageType: stageType || null, // Store stageType, default to null
+            boardId: boardId, // Denormalizar por conveniencia
+            createdAt: timestamp,
+            updatedAt: timestamp
+        };
+
+        await columnsCollectionRef.doc(columnId).set(newColumn);
+        
+        // Añadir el ID de la nueva columna al final del columns_order del tablero
+        await boardDocRef.update({
+            columns_order: admin.firestore.FieldValue.arrayUnion(columnId),
+            updatedAt: timestamp
+        });
+
+        console.log(`[Server] Columna Kanban creada para tablero ${boardId}: ${columnId} - ${newColumn.name}, Tipo Etapa: ${newColumn.stageType}`);
+        res.status(201).json({ success: true, message: 'Columna Kanban creada.', data: newColumn });
+
+    } catch (err) {
+        console.error(`[Server][Firestore Error] Creando columna Kanban para tablero ${boardId}:`, err);
+        res.status(500).json({ success: false, message: 'Error interno al crear la columna Kanban.' });
+    }
+});
+
+// GET /users/:userId/kanban-boards/:boardId/columns - Listar columnas de un tablero
+app.get('/users/:userId/kanban-boards/:boardId/columns', async (req, res) => {
+    const { userId, boardId } = req.params;
+    console.log(`[Server] GET /users/${userId}/kanban-boards/${boardId}/columns`);
+    try {
+        const boardDocRef = firestoreDb.collection('users').doc(userId).collection('kanban_boards').doc(boardId);
+        const boardDocSnap = await boardDocRef.get();
+        if (!boardDocSnap.exists) {
+            return res.status(404).json({ success: false, message: 'Tablero Kanban no encontrado.' });
+        }
+
+        const boardData = boardDocSnap.data();
+        const columnsOrder = boardData.columns_order || [];
+
+        const columnsSnapshot = await boardDocRef.collection('columns').get();
+        const columnsMap = new Map();
+        columnsSnapshot.forEach(doc => {
+            const data = doc.data();
+            if (data.createdAt?.toDate) data.createdAt = data.createdAt.toDate().toISOString();
+            if (data.updatedAt?.toDate) data.updatedAt = data.updatedAt.toDate().toISOString();
+            columnsMap.set(doc.id, data);
+        });
+
+        // Ordenar columnas según columns_order
+        const orderedColumns = columnsOrder.map(colId => columnsMap.get(colId)).filter(Boolean);
+        
+        // Añadir columnas que podrían no estar en columns_order (aunque deberían)
+        columnsMap.forEach((colData, colId) => {
+            if (!columnsOrder.includes(colId)) {
+                orderedColumns.push(colData);
+            }
+        });
+
+        res.json({ success: true, data: orderedColumns });
+    } catch (err) {
+        console.error(`[Server][Firestore Error] Listando columnas para tablero ${boardId}:`, err);
+        res.status(500).json({ success: false, message: 'Error interno al listar columnas.' });
+    }
+});
+
+// PUT /users/:userId/kanban-boards/:boardId/columns/:columnId - Actualizar una columna
+app.put('/users/:userId/kanban-boards/:boardId/columns/:columnId', async (req, res) => {
+    const { userId, boardId, columnId } = req.params;
+    const { name, stageType } = req.body; // Added stageType
+    console.log(`[Server] PUT /users/${userId}/kanban-boards/${boardId}/columns/${columnId} - Datos: ${JSON.stringify(req.body)}`);
+
+    if ((!name || !name.trim()) && stageType === undefined) { // Check if stageType is undefined to allow setting it to null
+        return res.status(400).json({ success: false, message: 'Se requiere nombre o stageType para actualizar.' });
+    }
+
+    const columnDocRef = firestoreDb.collection('users').doc(userId)
+                                 .collection('kanban_boards').doc(boardId)
+                                 .collection('columns').doc(columnId);
+    try {
+        const updateData = {
+            updatedAt: admin.firestore.FieldValue.serverTimestamp()
+        };
+
+        if (name && name.trim()) {
+            updateData.name = name.trim();
+        }
+        
+        // Allow setting stageType to a new value or to null
+        if (stageType !== undefined) { 
+            updateData.stageType = stageType; // This will store null if stageType is explicitly passed as null
+        }
+
+        if (Object.keys(updateData).length === 1 && updateData.updatedAt) {
+             return res.status(400).json({ success: false, message: 'Ningún dato válido proporcionado para la actualización (solo timestamp).' });
+        }
+
+        await columnDocRef.update(updateData); // Falla si no existe
+        console.log(`[Server] Columna Kanban actualizada: ${columnId}`);
+        const updatedDocSnap = await columnDocRef.get();
+        res.json({ success: true, message: 'Columna Kanban actualizada.', data: updatedDocSnap.data() });
+
+    } catch (err) {
+        console.error(`[Server][Firestore Error] Actualizando columna ${columnId}:`, err);
+        if (err.code === 5) { // Firestore NOT_FOUND
+            return res.status(404).json({ success: false, message: 'Columna Kanban no encontrada para actualizar.' });
+        }
+        res.status(500).json({ success: false, message: 'Error interno al actualizar la columna.' });
+    }
+});
+
+// DELETE /users/:userId/kanban-boards/:boardId/columns/:columnId - Eliminar una columna
+app.delete('/users/:userId/kanban-boards/:boardId/columns/:columnId', async (req, res) => {
+    const { userId, boardId, columnId } = req.params;
+    console.log(`[Server] DELETE /users/${userId}/kanban-boards/${boardId}/columns/${columnId}`);
+    
+    const boardDocRef = firestoreDb.collection('users').doc(userId).collection('kanban_boards').doc(boardId);
+    const columnDocRef = boardDocRef.collection('columns').doc(columnId);
+
+    try {
+        const columnDocSnap = await columnDocRef.get();
+        if (!columnDocSnap.exists) {
+            return res.status(404).json({ success: false, message: 'Columna Kanban no encontrada.' });
+        }
+
+        await columnDocRef.delete();
+        
+        // Eliminar el ID de la columna de columns_order del tablero
+        await boardDocRef.update({
+            columns_order: admin.firestore.FieldValue.arrayRemove(columnId),
+            updatedAt: admin.firestore.FieldValue.serverTimestamp()
+        });
+
+        console.log(`[Server] Columna Kanban eliminada: ${columnId}`);
+        // También se podría querer desvincular chats de esta columna (kanbanColumnId = null)
+        res.json({ success: true, message: 'Columna Kanban eliminada.' });
+    } catch (err) {
+        console.error(`[Server][Firestore Error] Eliminando columna ${columnId}:`, err);
+        res.status(500).json({ success: false, message: 'Error interno al eliminar la columna.' });
+    }
+});
+
+
+// --- Gestión de Chats en Kanban ---
+
+// PUT /users/:userId/chats/:chatId/assign-kanban-column - Asignar un chat a una columna Kanban
+app.put('/users/:userId/chats/:chatId/assign-kanban-column', async (req, res) => {
+    const { userId, chatId } = req.params;
+    const { boardId, columnId } = req.body; // columnId puede ser null para desasignar
+
+    console.log(`[Server] PUT /users/${userId}/chats/${chatId}/assign-kanban-column - Board: ${boardId}, Column: ${columnId}`);
+
+    if (!boardId && columnId) { // Si se da columnId, boardId es obligatorio
+        return res.status(400).json({ success: false, message: 'Se requiere boardId si se especifica columnId.' });
+    }
+    // Si solo se da boardId y columnId es null/undefined, es para desasignar de una columna pero mantener en el tablero (o limpiar ambos)
+    // Si no se da boardId ni columnId, la acción es ambigua, pero la actualizaremos a null ambos.
+
+    const chatDocRef = firestoreDb.collection('users').doc(userId).collection('chats').doc(chatId);
+
+    try {
+        const chatDocSnap = await chatDocRef.get();
+        if (!chatDocSnap.exists) {
+            return res.status(404).json({ success: false, message: 'Chat no encontrado.' });
+        }
+
+        if (boardId && columnId) { // Solo validar columna si se está asignando a una específica
+            const columnDocRef = firestoreDb.collection('users').doc(userId)
+                                         .collection('kanban_boards').doc(boardId)
+                                         .collection('columns').doc(columnId);
+            const columnDocSnap = await columnDocRef.get();
+            if (!columnDocSnap.exists) { // Esto también implica que el board existe si la columna existe
+                return res.status(404).json({ success: false, message: 'Columna Kanban o Tablero no encontrado.' });
+            }
+        } else if (boardId && !columnId) { // Validar que el tablero exista si se está intentando desasignar de una columna en un tablero específico
+            const boardToValidateRef = firestoreDb.collection('users').doc(userId).collection('kanban_boards').doc(boardId);
+            const boardToValidateSnap = await boardToValidateRef.get();
+            if (!boardToValidateSnap.exists) {
+                 return res.status(404).json({ success: false, message: 'Tablero Kanban no encontrado para desasignar la columna.' });
+            }
+        }
+        // Si ni boardId ni columnId se proporcionan, se limpiarán ambos campos en el chat.
+
+        await chatDocRef.update({
+            kanbanBoardId: boardId || null, 
+            kanbanColumnId: (boardId && columnId) ? columnId : null, // Solo asignar columnId si boardId también está presente
+            updatedAt: admin.firestore.FieldValue.serverTimestamp() 
+        });
+
+        console.log(`[Server] Chat ${chatId} asignado a tablero ${boardId || 'ninguno'}, columna ${columnId || 'ninguna'}.`);
+        res.json({ success: true, message: `Chat asignado a columna ${columnId || 'ninguna'} en tablero ${boardId || 'ninguno'}.` });
+
+    } catch (err) {
+        console.error(`[Server][Firestore Error] Asignando chat ${chatId} a Kanban:`, err);
+        if (err.code === 5) { // Firestore NOT_FOUND (podría ser el chat durante el get inicial)
+            return res.status(404).json({ success: false, message: 'Error: Chat, tablero o columna no encontrado.' });
+        }
+        res.status(500).json({ success: false, message: 'Error interno al asignar chat a columna Kanban.' });
+    }
+});
+
+
+// GET /users/:userId/kanban-boards/:boardId/chats-by-column - Obtener chats organizados por columna para un tablero
+app.get('/users/:userId/kanban-boards/:boardId/chats-by-column', async (req, res) => {
+    const { userId, boardId } = req.params;
+    console.log(`[Server] GET /users/${userId}/kanban-boards/${boardId}/chats-by-column`);
+
+    try {
+        const boardDocRef = firestoreDb.collection('users').doc(userId).collection('kanban_boards').doc(boardId);
+        const boardDocSnap = await boardDocRef.get();
+        if (!boardDocSnap.exists) {
+            return res.status(404).json({ success: false, message: 'Tablero Kanban no encontrado.' });
+        }
+        const boardData = boardDocSnap.data();
+        const columnsOrder = boardData.columns_order || [];
+
+        // 1. Obtener todas las columnas del tablero
+        const columnsSnapshot = await boardDocRef.collection('columns').get();
+        const columnsMap = new Map();
+        // Inicializar todas las columnas del tablero, incluso si no tienen chats aún
+        columnsSnapshot.forEach(doc => {
+            const colData = doc.data();
+            if (colData.createdAt?.toDate) colData.createdAt = colData.createdAt.toDate().toISOString();
+            if (colData.updatedAt?.toDate) colData.updatedAt = colData.updatedAt.toDate().toISOString();
+            columnsMap.set(doc.id, { ...colData, chats: [] });
+        });
+        
+        // Estructura para chats que están en el tablero pero no tienen columna asignada (kanbanColumnId es null)
+        const unassignedInBoardChats = [];
+
+        // 2. Obtener todos los chats que pertenecen a este tablero Kanban
+        // Se recomienda un índice en Firestore: users/{userId}/chats sobre (kanbanBoardId ASC, updatedAt DESC)
+        const chatsRef = firestoreDb.collection('users').doc(userId).collection('chats');
+        const chatsInBoardSnapshot = await chatsRef
+            .where('kanbanBoardId', '==', boardId)
+            // Ordenar por lastMessageTimestamp para que los chats más recientes aparezcan primero dentro de la columna
+            .orderBy('lastMessageTimestamp', 'desc') 
+            .get();
+
+        chatsInBoardSnapshot.forEach(doc => {
+            const chatData = doc.data();
+            chatData.id = doc.id; // <<< ADDED THIS LINE to include the document ID as 'id'
+            chatData.chatId = doc.id; // <<< ALSO ADDED THIS LINE as 'chatId' for good measure/consistency
+            const assignedColumnId = chatData.kanbanColumnId; // Puede ser null
+            
+            // Convertir timestamps de chat
+            if (chatData.lastMessageTimestamp?.toDate) chatData.lastMessageTimestamp = chatData.lastMessageTimestamp.toDate().toISOString();
+            if (chatData.createdAt?.toDate) chatData.createdAt = chatData.createdAt.toDate().toISOString();
+            if (chatData.updatedAt?.toDate) chatData.updatedAt = chatData.updatedAt.toDate().toISOString();
+
+            if (assignedColumnId && columnsMap.has(assignedColumnId)) {
+                columnsMap.get(assignedColumnId).chats.push(chatData);
+            } else {
+                // Si el chat tiene kanbanBoardId pero no kanbanColumnId (es null) o el columnId no existe en el tablero
+                unassignedInBoardChats.push(chatData);
+            }
+        });
+        
+        // 3. Estructurar la respuesta con columnas ordenadas según columns_order
+        let resultColumns = columnsOrder
+            .map(colId => columnsMap.get(colId))
+            .filter(Boolean); // Filtrar por si alguna columna en order ya no existe en el map
+
+        // Añadir columnas que podrían existir en el map pero no en columns_order (debería ser raro)
+        columnsMap.forEach((colData, colId) => {
+            if (!columnsOrder.includes(colId)) {
+                // Evitar duplicados si ya fue agregada por columnsOrder (aunque filter(Boolean) lo manejaría)
+                if (!resultColumns.find(rc => rc.id === colId)) {
+                    resultColumns.push(colData);
+                }
+            }
+        });
+        
+        // Crear una representación de "Tablero Kanban" para el frontend
+        const responseBoardData = { ...boardData };
+        if (responseBoardData.createdAt?.toDate) responseBoardData.createdAt = responseBoardData.createdAt.toDate().toISOString();
+        if (responseBoardData.updatedAt?.toDate) responseBoardData.updatedAt = responseBoardData.updatedAt.toDate().toISOString();
+        
+        const response = {
+            success: true,
+            board: responseBoardData,
+            columns: resultColumns
+        };
+
+        // Incluir la sección de chats no asignados a una columna específica DENTRO de este tablero
+        if (unassignedInBoardChats.length > 0) {
+            response.unassignedInBoardChats = unassignedInBoardChats;
+        }
+
+
+        res.json(response);
+
+    } catch (err) {
+        console.error(`[Server][Firestore Error] Obteniendo chats por columna para tablero ${boardId}:`, err);
+        if (err.message && (err.message.includes('INVALID_ARGUMENT') || err.message.includes('requires an index'))) {
+            console.error(`[Server][Firestore Error] Posiblemente falte un índice en la colección 'chats' para 'kanbanBoardId' y/o 'lastMessageTimestamp'. Mensaje: ${err.message}`);
+             return res.status(500).json({ success: false, message: 'Error interno: Falta un índice de base de datos. Contacte al administrador.', code: 'INDEX_REQUIRED_CHATS_KANBAN' });
+         }
+        res.status(500).json({ success: false, message: 'Error interno al obtener chats por columna.' });
+    }
+});
+
+
+// === FIN Rutas para Gestión de Kanban (CRM) ===

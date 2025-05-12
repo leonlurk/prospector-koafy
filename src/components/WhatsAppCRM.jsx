@@ -1,7 +1,12 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { FaWhatsapp, FaUser, FaRobot, FaChartBar, FaPlus, FaPaperPlane, FaQrcode, FaCog, FaSearch } from 'react-icons/fa';
+import { FaWhatsapp, FaUser, FaRobot, FaChartBar, FaPlus, FaPaperPlane, FaQrcode, FaCog, FaSearch, FaSignInAlt, FaSpinner, FaTasks, FaCommentDots, FaPaperclip } from 'react-icons/fa';
 import { db, auth } from '../firebaseConfig';
 import axios from 'axios';
+import { 
+    getUserKanbanBoards, 
+    getKanbanBoardColumnsOnly,
+    assignChatToKanbanColumn 
+} from '../api';
 
 // URLs de producción - Ajusta estos valores según tu configuración de VPS con nginx
 const API_BASE_URL = "https://alets.com.ar/setter-api"; // La URL correcta según la configuración de Nginx
@@ -45,6 +50,20 @@ const WhatsAppCRM = ({ user }) => {
 
   // Estado para controlar si WebSocket está habilitado
   const [wsEnabled, setWsEnabled] = useState(true);
+
+  // New state for Kanban assignment modal
+  const [assignModalState, setAssignModalState] = useState({
+    isOpen: false,
+    chat: null,
+    boards: [],
+    selectedBoardId: '',
+    columns: [],
+    selectedColumnId: '',
+    isLoadingBoards: false,
+    isLoadingColumns: false,
+    error: null,
+    successMessage: ''
+  });
 
   // Helper function para manejar respuestas de la API (como en setter-ai/services/api.js)
   const handleResponse = async (response) => {
@@ -333,6 +352,12 @@ const WhatsAppCRM = ({ user }) => {
                          // setQrCodeUrl(message.qrCodeUrl || null);
                          break;
                     case 'NEW_MESSAGE':
+                        // IGNORAR mensajes de broadcast/newsletter aquí también si es posible identificar el chat
+                        if (message.payload?.chatId && 
+                            (message.payload.chatId.includes('@newsletter') || message.payload.chatId.includes('@broadcast'))) {
+                            if (DEBUG) console.log('Ignorando NEW_MESSAGE de broadcast/newsletter:', message.payload.chatId);
+                            return; // No procesar este mensaje
+                        }
                         // Actualizar la lista de mensajes del chat seleccionado
                         if (selectedChat && selectedChat.id === message.payload.chatId) {
                             setMessages(prev => [...prev, message.payload]);
@@ -346,6 +371,12 @@ const WhatsAppCRM = ({ user }) => {
                          ));
                         break;
                     case 'CHAT_UPDATE':
+                        // IGNORAR actualizaciones de chats de broadcast/newsletter
+                        if (message.payload?.id && 
+                            (message.payload.id.includes('@newsletter') || message.payload.id.includes('@broadcast'))) {
+                            if (DEBUG) console.log('Ignorando CHAT_UPDATE de broadcast/newsletter:', message.payload.id);
+                            return; // No procesar esta actualización de chat
+                        }
                         // Actualizar una conversación específica en la lista
                          setConversations(prevConvos => {
                              const existingIndex = prevConvos.findIndex(c => c.id === message.payload.id);
@@ -504,23 +535,29 @@ const WhatsAppCRM = ({ user }) => {
       setErrorMessage(null);
       console.log("Cargando conversaciones...");
       const result = await apiCall(`/users/${user.uid}/chats`);
-      console.log("Conversaciones cargadas:", result);
+      console.log("Conversaciones cargadas (raw):", result);
       if (result && result.data) {
-        // Procesar las conversaciones para asegurar que tienen el formato correcto
-        const processedChats = result.data.map(chat => ({
-          id: chat.chatId,  // Asignar chatId a id para mantener consistencia
-          phoneNumber: chat.contactName || chat.chatId,
-          name: formatPhoneNumber(chat.contactName),
-          lastMessage: formatLastMessage(chat.lastMessageContent),
-          timestamp: chat.lastMessageTimestamp,
-          unreadCount: chat.unreadCount || 0
-        }));
+        // Procesar y FILTRAR las conversaciones
+        const processedAndFilteredChats = result.data
+          .filter(chat => 
+            chat.chatId && 
+            !chat.chatId.includes('@newsletter') && 
+            !chat.chatId.includes('@broadcast')
+          )
+          .map(chat => ({
+            id: chat.chatId,  // Asignar chatId a id para mantener consistencia
+            phoneNumber: chat.contactName || chat.chatId, // Keep original chatId here if no contactName
+            name: formatPhoneNumber(chat.contactName || chat.chatId), // Format for display
+            lastMessage: formatLastMessage(chat.lastMessageContent),
+            timestamp: chat.lastMessageTimestamp,
+            unreadCount: chat.unreadCount || 0
+          }));
         
-        console.log("Conversaciones procesadas:", processedChats);
-        setConversations(processedChats);
+        console.log("Conversaciones procesadas y filtradas para CRM Inbox:", processedAndFilteredChats);
+        setConversations(processedAndFilteredChats);
         
         // Cambiar a pestaña de chats si hay conversaciones
-        if (processedChats.length > 0) {
+        if (processedAndFilteredChats.length > 0) {
           setActiveTab('chats');
         }
       }
@@ -706,123 +743,281 @@ const WhatsAppCRM = ({ user }) => {
     return connectionStatus === 'connected' || connectionStatus === 'connecting' || connectionStatus === 'generating_qr';
   };
 
+  // --- Kanban Assignment Modal Functions ---
+  const openAssignToKanbanModal = async (chat) => {
+    if (!chat || !chat.id) {
+      console.error("Cannot open assign modal: chat or chat.id is missing", chat);
+      setAssignModalState(prev => ({ ...prev, error: "Información del chat inválida."}));
+      return;
+    }
+    setAssignModalState(prev => ({
+      ...prev,
+      isOpen: true,
+      chat: chat,
+      selectedBoardId: '',
+      columns: [],
+      selectedColumnId: '',
+      error: null,
+      successMessage: ''
+    }));
+    await loadBoardsForModal();
+  };
+
+  const loadBoardsForModal = async () => {
+    if (!user || !user.uid) return;
+    setAssignModalState(prev => ({ ...prev, isLoadingBoards: true, error: null }));
+    try {
+      // The authToken parameter in getUserKanbanBoards is not strictly used if getAuthHeaders() provides the key.
+      // We can pass STATIC_API_KEY or a placeholder if needed, relying on getAuthHeaders in api.js.
+      const response = await getUserKanbanBoards(user.uid, STATIC_API_KEY); 
+      if (response.success && response.data) {
+        setAssignModalState(prev => ({ ...prev, boards: response.data, isLoadingBoards: false }));
+      } else {
+        throw new Error(response.message || "No se pudieron cargar los tableros Kanban.");
+      }
+    } catch (error) {
+      console.error("Error loading Kanban boards for modal:", error);
+      setAssignModalState(prev => ({ ...prev, isLoadingBoards: false, error: error.message }));
+    }
+  };
+
+  const handleBoardSelectedInModal = async (boardId) => {
+    setAssignModalState(prev => ({
+      ...prev,
+      selectedBoardId: boardId,
+      columns: [], // Reset columns
+      selectedColumnId: '', // Reset selected column
+      isLoadingColumns: true,
+      error: null
+    }));
+    if (!user || !user.uid || !boardId) {
+      setAssignModalState(prev => ({ ...prev, isLoadingColumns: false, error: "ID de usuario o tablero no válido." }));
+      return;
+    }
+    try {
+      const response = await getKanbanBoardColumnsOnly(user.uid, boardId, STATIC_API_KEY);
+      if (response.success && response.columns) {
+        setAssignModalState(prev => ({ ...prev, columns: response.columns, isLoadingColumns: false }));
+      } else {
+        throw new Error(response.message || "No se pudieron cargar las columnas del tablero.");
+      }
+    } catch (error) {
+      console.error("Error loading columns for modal:", error);
+      setAssignModalState(prev => ({ ...prev, isLoadingColumns: false, error: error.message }));
+    }
+  };
+  
+  const handleAssignConfirm = async () => {
+    const { chat, selectedBoardId, selectedColumnId } = assignModalState;
+    if (!chat || !chat.id || !selectedBoardId || !selectedColumnId || !user || !user.uid) {
+      setAssignModalState(prev => ({ ...prev, error: "Faltan datos para la asignación. Seleccione tablero y columna." }));
+      return;
+    }
+    setAssignModalState(prev => ({ ...prev, error: null, successMessage: '' })); // Clear previous messages
+    try {
+      const response = await assignChatToKanbanColumn(user.uid, chat.id, selectedBoardId, selectedColumnId, STATIC_API_KEY);
+      if (response.success) {
+        setAssignModalState(prev => ({
+          ...prev,
+          successMessage: `Chat "${chat.name || chat.phoneNumber}" asignado exitosamente!`,
+          error: null,
+        }));
+        // Optionally close modal after a delay or keep it open with success message
+        setTimeout(() => {
+          closeAssignModal();
+        }, 2000);
+      } else {
+        throw new Error(response.message || "Error al asignar el chat.");
+      }
+    } catch (error) {
+      console.error("Error confirming chat assignment:", error);
+      setAssignModalState(prev => ({ ...prev, error: error.message, successMessage: '' }));
+    }
+  };
+
+  const closeAssignModal = () => {
+    setAssignModalState({
+      isOpen: false,
+      chat: null,
+      boards: assignModalState.boards, // Keep boards loaded
+      selectedBoardId: '',
+      columns: [],
+      selectedColumnId: '',
+      isLoadingBoards: false,
+      isLoadingColumns: false,
+      error: null,
+      successMessage: ''
+    });
+  };
+
   // Componente de chat
   const ChatInterface = () => (
-    <div className="flex h-full">
+    <div className="flex h-full bg-slate-50 font-['Poppins']">
       {/* Lista de conversaciones */}
-      <div className="w-1/3 bg-white border-r border-gray-200 overflow-y-auto">
-        <div className="p-4 border-b border-gray-200">
+      <div className="w-1/3 flex flex-col border-r border-slate-200">
+        {/* Header con Búsqueda y Filtros */}
+        <div className="p-4 space-y-3 border-b border-slate-200 bg-white">
           <div className="relative">
+            <FaSearch className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
             <input 
               type="text" 
-              placeholder="Buscar chat..." 
-              className="w-full p-2 pl-8 border border-gray-300 rounded"
+              placeholder="Buscar chat o contacto..." 
+              className="w-full p-2 pl-10 border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 outline-none transition-shadow shadow-sm"
             />
-            <FaSearch className="absolute left-2 top-3 text-gray-400" />
+          </div>
+          {/* Placeholder para botones de filtro */}
+          <div className="flex space-x-2">
+            <button className="px-3 py-1 text-sm text-purple-700 bg-purple-100 rounded-full hover:bg-purple-200 transition">Todo</button>
+            <button className="px-3 py-1 text-sm text-slate-600 bg-slate-100 rounded-full hover:bg-slate-200 transition">No Leídos</button>
+            <button className="px-3 py-1 text-sm text-slate-600 bg-slate-100 rounded-full hover:bg-slate-200 transition flex items-center">
+              <FaWhatsapp className="mr-1 text-green-500"/> WhatsApp
+            </button>
+            {/* Add more source filters as needed, e.g., Instagram, Email */}
           </div>
         </div>
         
-        <div className="divide-y divide-gray-200">
+        {/* Lista de Chats */}
+        <div className="flex-grow overflow-y-auto divide-y divide-slate-200">
           {conversations && conversations.length > 0 ? (
             conversations.map(chat => (
               <div 
                 key={chat.id || chat.phoneNumber} 
-                className={`p-4 cursor-pointer hover:bg-gray-50 ${selectedChat?.id === chat.id ? 'bg-blue-50' : ''}`}
+                className={`p-3 cursor-pointer transition-colors ${selectedChat?.id === chat.id ? 'bg-purple-50 hover:bg-purple-100' : 'hover:bg-slate-100'}`}
                 onClick={() => selectChat(chat)}
               >
-                <div className="flex items-center">
-                  <div className="w-10 h-10 bg-gray-300 rounded-full flex items-center justify-center text-white mr-3">
-                    <FaUser />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-gray-900 truncate">
-                      {chat.name || formatPhoneNumber(chat.phoneNumber)}
-                    </p>
-                    <p className="text-sm text-gray-500 truncate">{chat.lastMessage || 'Sin mensajes'}</p>
-                  </div>
-                  {chat.unreadCount > 0 && (
-                    <div className="bg-green-500 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs">
-                      {chat.unreadCount}
+                <div className="flex items-center space-x-3">
+                  {/* Avatar */}
+                  <div className="relative">
+                    <div className="w-12 h-12 bg-gradient-to-br from-purple-500 to-blue-500 rounded-full flex items-center justify-center text-white text-xl font-medium">
+                      {/* Placeholder for initials or image */}
+                      {chat.name ? chat.name.substring(0,1).toUpperCase() : <FaUser size={20}/>}
                     </div>
-                  )}
+                    {/* Status indicator example */}
+                    {/* <span className="absolute bottom-0 right-0 block h-3 w-3 rounded-full bg-green-400 ring-2 ring-white" /> */}
+                  </div>
+                  
+                  <div className="flex-1 min-w-0">
+                    <div className="flex justify-between items-center">
+                      <p className="text-sm font-semibold text-slate-800 truncate">
+                        {chat.name || formatPhoneNumber(chat.phoneNumber)}
+                      </p>
+                      <p className="text-xs text-slate-400">
+                        {/* Placeholder for timestamp */}
+                        {chat.lastMessageTimestamp ? new Date(chat.lastMessageTimestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : '10:30 AM'}
+                      </p>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <p className="text-sm text-slate-500 truncate">{chat.lastMessage || 'Haz click para ver detalles'}</p>
+                      {chat.unreadCount > 0 && (
+                        <div className="bg-purple-500 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs font-semibold">
+                          {chat.unreadCount}
+                        </div>
+                      )}
+                    </div>
+                  </div>
                 </div>
               </div>
             ))
           ) : (
-            <div className="p-4 text-center text-gray-500">
-              <p>No hay conversaciones disponibles</p>
-              <p className="text-sm">Presiona "Cargar conversaciones" para actualizar</p>
+            <div className="p-6 text-center text-slate-500">
+              <FaWhatsapp size={40} className="mx-auto mb-3 text-slate-400" />
+              <p className="font-medium">Bandeja de entrada vacía</p>
+              <p className="text-sm">No hay conversaciones activas en este momento.</p>
+              {/* <button className="mt-3 px-4 py-2 text-sm bg-purple-500 text-white rounded-lg hover:bg-purple-600 transition">
+                Cargar Conversaciones
+              </button> */}
             </div>
           )}
         </div>
       </div>
       
       {/* Panel de mensajes */}
-      <div className="w-2/3 flex flex-col">
+      <div className="w-2/3 flex flex-col bg-slate-100">
         {selectedChat ? (
           <>
             {/* Cabecera del chat */}
-            <div className="p-4 border-b border-gray-200 bg-white flex items-center">
-              <div className="w-10 h-10 bg-gray-300 rounded-full flex items-center justify-center text-white mr-3">
-                <FaUser />
+            <div className="p-3 border-b border-slate-200 bg-white flex justify-between items-center shadow-sm">
+              <div className="flex items-center space-x-3">
+                 <div className="w-10 h-10 bg-gradient-to-br from-purple-500 to-blue-500 rounded-full flex items-center justify-center text-white text-lg font-medium">
+                    {selectedChat.name ? selectedChat.name.substring(0,1).toUpperCase() : <FaUser size={18}/>}
+                 </div>
+                <div>
+                  <h3 className="font-semibold text-slate-800">{selectedChat.name || formatPhoneNumber(selectedChat.phoneNumber)}</h3>
+                  <p className="text-xs text-green-500">
+                     {connectionStatus === 'connected' ? '● En línea' : '○ Desconectado'}
+                  </p>
+                </div>
               </div>
               <div>
-                <h3 className="font-medium">{selectedChat.name || formatPhoneNumber(selectedChat.phoneNumber)}</h3>
-                <p className="text-sm text-gray-500">{connectionStatus === 'connected' ? 'En línea' : 'Desconectado'}</p>
+                <button 
+                  onClick={() => openAssignToKanbanModal(selectedChat)}
+                  className="px-3 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors flex items-center text-sm shadow-md hover:shadow-lg"
+                  title="Asignar este chat a un tablero Kanban"
+                  disabled={!selectedChat.id}
+                >
+                  <FaTasks className="mr-2" /> Asignar a Kanban
+                </button>
               </div>
             </div>
             
             {/* Área de mensajes */}
-            <div className="flex-1 overflow-y-auto p-4 bg-gray-100">
+            <div className="flex-1 overflow-y-auto p-4 space-y-3">
               {messages && messages.length > 0 ? (
                 messages.map(msg => (
                   <div 
-                    key={msg.id || `${msg.timestamp}-${Math.random().toString(36).substr(2, 9)}`} 
-                    className={`max-w-xs md:max-w-md mx-2 my-1 p-3 rounded-lg ${
-                      msg.fromMe 
-                        ? 'ml-auto bg-green-100 text-gray-800' 
-                        : 'mr-auto bg-white text-gray-800'
-                    }`}
+                    key={msg.id || (String(msg.timestamp) + '-' + Math.random().toString(36).substr(2, 9))} 
+                    className={'flex ' + (msg.fromMe ? 'justify-end' : 'justify-start')}
                   >
-                    <p>{msg.body}</p>
-                    <p className="text-right text-xs text-gray-500 mt-1">
-                      {msg.timestamp ? new Date(msg.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : ''}
-                    </p>
+                    <div className={`max-w-md p-3 rounded-xl shadow-sm ${
+                      msg.fromMe 
+                        ? 'bg-gradient-to-br from-purple-600 to-blue-500 text-white' 
+                        : 'bg-white text-slate-700 border border-slate-200'
+                    }`}>
+                      <p className="text-sm">{msg.body}</p>
+                      <p className={`text-xs mt-1 ${msg.fromMe ? 'text-purple-200' : 'text-slate-400'} text-right`}>
+                        {msg.timestamp ? new Date(msg.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : ''}
+                      </p>
+                    </div>
                   </div>
                 ))
               ) : (
-                <div className="flex justify-center items-center h-full text-gray-500">
-                  <p>No hay mensajes disponibles</p>
+                <div className="flex justify-center items-center h-full text-slate-500">
+                  <FaCommentDots size={32} className="mx-auto mb-2" />
+                  <p>No hay mensajes en esta conversación.</p>
                 </div>
               )}
             </div>
             
             {/* Área de entrada de mensajes */}
-            <div className="p-4 border-t border-gray-200 bg-white">
-              <div className="flex items-center">
+            <div className="p-3 border-t border-slate-200 bg-white shadow-top">
+              <div className="flex items-center space-x-2">
+                <button className="p-2 text-slate-500 hover:text-purple-600 rounded-full hover:bg-purple-100 transition">
+                  {/* Placeholder for attachment icon */}
+                  <FaPaperclip size={20} />
+                </button>
                 <input 
                   type="text" 
                   placeholder="Escribe un mensaje..." 
-                  className="flex-1 p-2 border border-gray-300 rounded-l-lg focus:outline-none"
+                  className="flex-1 p-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 outline-none shadow-sm"
                   value={newMessage}
                   onChange={(e) => setNewMessage(e.target.value)}
                   onKeyPress={(e) => e.key === 'Enter' && sendMessage()}
                 />
                 <button 
-                  className="p-2 bg-green-500 text-white rounded-r-lg hover:bg-green-600"
+                  className="p-3 bg-gradient-to-br from-purple-600 to-blue-500 text-white rounded-lg hover:from-purple-700 hover:to-blue-600 transition shadow-md hover:shadow-lg"
                   onClick={sendMessage}
                 >
-                  <FaPaperPlane />
+                  <FaPaperPlane size={18} />
                 </button>
               </div>
             </div>
           </>
         ) : (
-          <div className="flex-1 flex items-center justify-center bg-gray-100">
-            <div className="text-center text-gray-500">
-              <FaWhatsapp size={48} className="mx-auto mb-4" />
-              <p>Selecciona una conversación para comenzar</p>
-            </div>
+          <div className="flex-1 flex flex-col items-center justify-center bg-slate-100 text-slate-500 p-8">
+            <FaWhatsapp size={56} className="mx-auto mb-5 text-slate-400" />
+            <h3 className="text-xl font-semibold mb-1">Tu Bandeja de Entrada CRM</h3>
+            <p className="text-center">Selecciona una conversación de la lista para ver los mensajes aquí.</p>
+            <p className="text-center text-sm mt-1">Gestiona todas tus interacciones en un solo lugar.</p>
           </div>
         )}
       </div>
@@ -1030,6 +1225,85 @@ const WhatsAppCRM = ({ user }) => {
           {activeTab === 'settings' && <ConnectionPanel />}
         </div>
       </div>
+
+      {/* Modal para asignar Chat a Kanban */}
+      {assignModalState.isOpen && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-xl w-full max-w-md">
+            <h3 className="text-xl font-semibold mb-4 text-gray-800 dark:text-white">Asignar Chat a Kanban</h3>
+            {assignModalState.chat && (
+              <p className="mb-4 text-sm text-gray-600 dark:text-gray-300">
+                Asignar: <strong>{assignModalState.chat.name || formatPhoneNumber(assignModalState.chat.phoneNumber)}</strong>
+              </p>
+            )}
+
+            {assignModalState.error && (
+              <p className="mb-4 text-sm text-red-500 bg-red-100 dark:bg-red-900 dark:text-red-300 p-2 rounded">{assignModalState.error}</p>
+            )}
+            {assignModalState.successMessage && (
+              <p className="mb-4 text-sm text-green-500 bg-green-100 dark:bg-green-900 dark:text-green-300 p-2 rounded">{assignModalState.successMessage}</p>
+            )}
+
+            <div className="mb-4">
+              <label htmlFor="kanban-board-select" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Tablero Kanban:</label>
+              {assignModalState.isLoadingBoards ? (
+                <div className="flex items-center text-gray-500 dark:text-gray-400"><FaSpinner className="animate-spin mr-2" /> Cargando tableros...</div>
+              ) : (
+                <select
+                  id="kanban-board-select"
+                  value={assignModalState.selectedBoardId}
+                  onChange={(e) => handleBoardSelectedInModal(e.target.value)}
+                  className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-blue-500 focus:border-blue-500"
+                  disabled={assignModalState.boards.length === 0}
+                >
+                  <option value="">{assignModalState.boards.length === 0 ? "No hay tableros disponibles" : "Seleccione un tablero"}</option>
+                  {assignModalState.boards.map(board => (
+                    <option key={board.id} value={board.id}>{board.name}</option>
+                  ))}
+                </select>
+              )}
+            </div>
+
+            {assignModalState.selectedBoardId && (
+              <div className="mb-6">
+                <label htmlFor="kanban-column-select" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Columna:</label>
+                {assignModalState.isLoadingColumns ? (
+                  <div className="flex items-center text-gray-500 dark:text-gray-400"><FaSpinner className="animate-spin mr-2" /> Cargando columnas...</div>
+                ) : (
+                  <select
+                    id="kanban-column-select"
+                    value={assignModalState.selectedColumnId}
+                    onChange={(e) => setAssignModalState(prev => ({ ...prev, selectedColumnId: e.target.value }))}
+                    className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-blue-500 focus:border-blue-500"
+                    disabled={!assignModalState.selectedBoardId || assignModalState.columns.length === 0}
+                  >
+                    <option value="">{assignModalState.columns.length === 0 && assignModalState.selectedBoardId ? "No hay columnas en este tablero" : "Seleccione una columna"}</option>
+                    {assignModalState.columns.map(column => (
+                      <option key={column.id} value={column.id}>{column.name}</option>
+                    ))}
+                  </select>
+                )}
+              </div>
+            )}
+
+            <div className="flex justify-end space-x-3">
+              <button
+                onClick={closeAssignModal}
+                className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-600 hover:bg-gray-200 dark:hover:bg-gray-500 rounded-md focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={handleAssignConfirm}
+                disabled={!assignModalState.selectedBoardId || !assignModalState.selectedColumnId || assignModalState.isLoadingBoards || assignModalState.isLoadingColumns}
+                className="px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-md focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50"
+              >
+                Asignar Chat
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

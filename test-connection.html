@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Prueba de Conectividad API</title>
+    <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+</head>
+<body>
+    <h1>Prueba de Conectividad con API</h1>
+    <div>
+        <button id="testOriginal">Probar https://koafy.alets.com.ar</button>
+        <button id="testAlternative">Probar https://alets.com.ar/setter-api</button>
+    </div>
+    <pre id="result" style="margin-top: 20px; padding: 10px; background-color: #f5f5f5; border: 1px solid #ddd;"></pre>
+
+    <script>
+        document.getElementById('testOriginal').addEventListener('click', async () => {
+            const resultElement = document.getElementById('result');
+            resultElement.textContent = 'Probando conexión a https://koafy.alets.com.ar...';
+            
+            try {
+                const response = await axios.get('https://koafy.alets.com.ar', {
+                    timeout: 5000
+                });
+                resultElement.textContent = `Conexión exitosa:\n${JSON.stringify(response.data, null, 2)}`;
+            } catch (error) {
+                resultElement.textContent = `Error de conexión:\n${error.message}\n\nDetalles:\n${JSON.stringify(error, null, 2)}`;
+            }
+        });
+
+        document.getElementById('testAlternative').addEventListener('click', async () => {
+            const resultElement = document.getElementById('result');
+            resultElement.textContent = 'Probando conexión a https://alets.com.ar/setter-api...';
+            
+            try {
+                const response = await axios.get('https://alets.com.ar/setter-api', {
+                    timeout: 5000
+                });
+                resultElement.textContent = `Conexión exitosa:\n${JSON.stringify(response.data, null, 2)}`;
+            } catch (error) {
+                resultElement.textContent = `Error de conexión:\n${error.message}\n\nDetalles:\n${JSON.stringify(error, null, 2)}`;
+            }
+        });
+    </script>
+</body>
+</html> 

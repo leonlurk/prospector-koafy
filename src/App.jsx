@@ -9,6 +9,8 @@ import ProspectsPanel from './components/ProspectsPanel';
 import SettingsPanel from './components/SettingsPanel';
 import StatisticsDashboard from './components/StatisticsDashboard';
 import { BrowserRouter as Router, Routes, Route, Navigate } from "react-router-dom";
+import CRMLayout from './features/crm/CRMLayout';
+import KanbanBoardsView from './features/crm/KanbanBoardsView';
 
 function App() {
   const [user, setUser] = useState(null);
@@ -44,6 +46,17 @@ function App() {
         <Route path="/prospects" element={<ProspectsPanel user={user} />} />
         <Route path="/settings" element={<SettingsPanel user={user} />} />
         <Route path="/statistics" element={<StatisticsDashboard />} />
+        <Route path="/sso-handler" element={<SSOHandler />} />
+        
+        {/* Rutas CRM Whatsapp */}
+        <Route path="/crm" element={<CRMLayout />}>
+          <Route index element={<Navigate to="kanban-boards" replace />} /> {/* Redirigir /crm a /crm/kanban-boards */}
+          <Route path="kanban-boards" element={<KanbanBoardsView />} />
+          {/* <Route path="contacts" element={<ContactsView />} /> */}
+          {/* <Route path="whatsapp-chats" element={<WhatsappChatsView />} /> */}
+          {/* Otras sub-rutas del CRM aquí */}
+        </Route>
+
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </Router>

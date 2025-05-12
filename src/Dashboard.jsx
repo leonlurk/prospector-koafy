@@ -35,12 +35,15 @@ import KnowledgeBasePage from './features/setter-ai/pages/KnowledgeBasePage'; //
 import Documentos from './Documentos';
 // Importar el componente CRM WhatsApp
 import WhatsAppCRM from './components/WhatsAppCRM';
+// Import CRM components
+import KanbanBoardsView from './features/crm/KanbanBoardsView';
+import KanbanStatsView from './features/crm/KanbanStatsView'; // Import the new component
 
 // Helper function to determine the current tool context based on selectedOption
 const getToolContext = (option) => {
   const prospectorOptions = [
     "Home", "Plantillas", "Campañas", "Listas", "Whitelist", 
-    "Blacklist", "Nueva Campaña", "Conectar Instagram", "Estadísticas", "Send Media", "CRMWhatsApp",
+    "Blacklist", "Nueva Campaña", "Conectar Instagram", "Estadísticas", "Send Media",
     // Add generic options possibly shared or belonging to prospector
     "Ajustes", "Light Mode" 
   ];
@@ -58,6 +61,12 @@ const getToolContext = (option) => {
       // Add any other Calendar-specific view options here
     ];
   
+  const crmOptions = [
+      "CRM WhatsApp", // The main option in the dropdown
+      "CRMKanbanBoards", "CRMContacts", "CRMWhatsAppChats", "CRMSettings", "CRMInbox", "CRMKanbanStats"
+      // Add any other CRM-specific view options here
+    ];
+  
   // Check if it's an Agent Detail view
   if (typeof option === 'string' && option.startsWith("SetterAgentDetail_")) {
     return "setter";
@@ -69,6 +78,10 @@ const getToolContext = (option) => {
   // Check Calendar context next
   if (calendarOptions.includes(option)) {
     return "calendar";
+  }
+  // Check CRM context
+  if (crmOptions.includes(option)) {
+    return "crm";
   }
   // Check Prospector context last (as a fallback for known prospector/generic options)
   if (prospectorOptions.includes(option)) {
@@ -809,8 +822,10 @@ const Dashboard = () => {
             return <Documentos />;
         case 'Estadísticas': // Manejado abajo por optionType? Revisar
              return <StatisticsDashboard user={user} />;
-        case 'CRMWhatsApp': // Nuevo caso para CRM WhatsApp
-            return <WhatsAppCRM user={user} setSelectedOption={handleSidebarOptionChange} />; // Pass the function here
+        case 'CRMInbox': // Changed from CRM WhatsApp to CRMInbox
+            return <WhatsAppCRM user={user} />;
+        case 'CRMKanbanStats': // New case for CRM Kanban Stats
+            return <KanbanStatsView user={user} />;
         // Añadir otros casos directos si son necesarios ('Nueva Campaña', 'Send Media'?) 
         // Nota: 'Nueva Campaña' y 'Send Media' parecen manejarse abriendo modales, no cambiando la vista principal directamente.
         
@@ -831,32 +846,30 @@ const Dashboard = () => {
       return <SetterAgentsPage user={user} setSelectedOption={setSelectedOption} />;
         case 'SetterAgentDescriptionSetup': {
              console.warn("Attempted to render deprecated SetterAgentDescriptionSetup. This should not render anything directly now.");
-            // Perhaps redirect to the agent list or show an informative message
-             // For now, just render the agent list as a safe fallback
-            // return <SetterAgentsPage user={user} setSelectedOption={handleSidebarOptionChange} />; 
-            // OR Render the specific component if it exists and should be used?
-            // return <AgentDescriptionSetupPage user={user} />; // <-- COMENTANDO ESTA LÍNEA PARA EVITAR RENDER INTERMEDIO
-            return null; // Explicitly render nothing while in this temporary state
+            // This is now handled by the AgentList page when in "create new agent" mode 
+            // which then transitions to the detailed setup page as needed.
+            
+            // return <SetterAgentsPage user={user} setSelectedOption={handleSidebarOptionChange} />;
         }
-        case 'SetterAgentDetail': { 
-             if (typeof selectedOption === 'string') {
-                 const parts = selectedOption.split('_');
-                 if (parts.length >= 3) {
-                     const agentId = parts[2];
-                     // Pasar selectedOption completo para que el detalle sepa qué tab mostrar inicialmente
-         return <SetterAgentDetailPage 
-                                 agentId={agentId} 
-                   user={user} 
-                                 setSelectedOption={setSelectedOption} 
-                                 selectedOption={selectedOption} 
+        case 'SetterAgentDetail': {
+            // Format should be: SetterAgentDetail_TABID_AGENTID
+            const optionParts = selectedOption.split('_');
+            
+            // Must be at least 3 parts (name_tab_id)
+            if (optionParts.length >= 3) {
+                const tabId = optionParts[1];
+                const agentId = optionParts.slice(2).join('_'); // Handle agent IDs that might have underscores
+                
+                return <SetterAgentDetailPage
+                    user={user} 
+                    setSelectedOption={setSelectedOption}
+                    agentId={agentId}
+                    initialTabId={tabId}
                 />;
-      } else {
-                     console.error("Dashboard: Invalid SetterAgentDetail format", selectedOption);
-                     return <div>Error: ID de agente inválido en la opción seleccionada.</div>; 
-                 }
-             } else {
-                 return <div>Error: Opción de detalle de agente inválida.</div>;
-    }
+            } else {
+                console.error("Dashboard: Invalid SetterAgentDetail format", selectedOption);
+                return <div>Error: Invalid agent detail format</div>;
+            }
         }
         case 'SetterStatistics': // ¿Conflicto con 'Estadísticas' arriba? Usar solo uno.
         return <StatisticsDashboard user={user} />;
@@ -870,6 +883,14 @@ const Dashboard = () => {
              return <div>Página de Configuración</div>;        
         case 'WhatsApp': // Caso antiguo 'whatsapp'
             return <WhatsAppPage setSelectedOption={handleSidebarOptionChange} />; // Pass the function here
+        
+        // --- CRM SECTIONS ---
+        case 'CRMKanbanBoards':
+            return <KanbanBoardsView />;
+        case 'CRMContacts':
+            return <div>No implementado aún.</div>;
+        case 'CRMSettings':
+            return <div>No implementado aún.</div>;
         
         default:
              // Si ni el nombre directo ni el tipo coincidieron

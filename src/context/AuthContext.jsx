@@ -9,24 +9,48 @@ export const AuthContext = createContext();
 export const AuthProvider = ({ children }) => {
   const [currentUser, setCurrentUser] = useState(null);
   const [loading, setLoading] = useState(true); // Optional: track loading state
+  const [authToken, setAuthToken] = useState(null);
 
   useEffect(() => {
     // Subscribe to auth state changes
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
+      console.log('Auth state changed, user:', user ? user.uid : null);
       setCurrentUser(user);
-      setLoading(false); // Set loading to false once auth state is determined
-      console.log('Auth state changed, currentUser:', user ? user.uid : null); // Log user state
+      
+      if (user) {
+        try {
+          // Get the ID token
+          const token = await user.getIdToken();
+          console.log('Token obtenido correctamente, longitud:', token?.length);
+          setAuthToken(token);
+        } catch (error) {
+          console.error('Error al obtener token:', error);
+          setAuthToken(null);
+        }
+      } else {
+        console.log('Usuario no autenticado, limpiando token');
+        setAuthToken(null);
+      }
+      
+      setLoading(false);
     });
 
     // Cleanup subscription on unmount
     return () => unsubscribe();
   }, []); // Empty dependency array ensures this runs only once on mount
 
-  // Provide the currentUser and loading state to children
+  // Provide the currentUser, authToken and loading state to children
   const value = {
     currentUser,
-    loading, // You can provide the loading state if needed elsewhere
+    authToken,
+    loading,
   };
+
+  console.log('AuthProvider rendering with:', { 
+    userPresent: !!currentUser, 
+    tokenPresent: !!authToken,
+    loading 
+  });
 
   // Render children only when not loading (or handle loading state explicitly)
   return (
@@ -39,5 +63,12 @@ export const AuthProvider = ({ children }) => {
 
 // Custom hook for easier context usage (optional but recommended)
 export const useAuth = () => {
-  return useContext(AuthContext);
+  const context = useContext(AuthContext);
+  
+  if (!context) {
+    console.error('useAuth debe usarse dentro de un AuthProvider');
+    throw new Error('useAuth debe usarse dentro de un AuthProvider');
+  }
+  
+  return context;
 }; 

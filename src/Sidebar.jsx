@@ -1,15 +1,16 @@
 import React, { useState, useEffect } from "react";
 import { auth } from "./firebaseConfig";
-import { useNavigate, NavLink } from "react-router-dom";
+import { useNavigate, NavLink, Link } from "react-router-dom";
 import PropTypes from 'prop-types';
 import { 
     FaInstagram, FaTimes, FaBan, FaHome, FaChartBar, FaTools, FaCalendarAlt, FaRobot, 
     // Add more icons as needed for Setter menu
     FaTachometerAlt, FaServer, FaShieldAlt, FaExchangeAlt, FaUsersCog, FaCreditCard, FaBell, FaLifeRing, FaCog, FaUserCircle, FaSignOutAlt,
-    FaWhatsapp, FaCommentDots, FaFileAlt
+    FaWhatsapp, FaCommentDots, FaFileAlt, FaChevronDown, FaTasks, FaChartPie
 } from "react-icons/fa"; 
 import { doc, getDoc } from "firebase/firestore";
 import { db } from "./firebaseConfig";
+import { useLocation } from "react-router-dom";
 
 const logoPath = "/assets/logoBlanco.png";
 
@@ -29,6 +30,19 @@ const setterMenuItems = [
     // Bottom Section (we can integrate these differently if needed)
     { name: "SetterSupport", label: "Soporte", icon: <FaLifeRing className="md:w-5 md:h-6 text-white" />, path: "/support", section: "bottom" },
     { name: "SetterSettings", label: "Ajustes", icon: <FaCog className="md:w-5 md:h-6 text-white" />, path: "/settings", section: "bottom" }, // Note: Was Cog6ToothIcon
+];
+
+// --- Define CRM Menu Items ---
+const crmMenuItems = [
+    // Main Nav
+    { name: "CRMKanbanBoards", label: "Tableros Kanban", icon: <FaTasks className="md:w-5 md:h-6 text-white" />, path: "/kanban-boards" },
+    { name: "CRMInbox", label: "Bandeja de Entrada", icon: <FaCommentDots className="md:w-5 md:h-6 text-white" />, path: "/crm-inbox" },
+    { name: "CRMKanbanStats", label: "Estadísticas CRM", icon: <FaChartPie className="md:w-5 md:h-6 text-white" />, path: "/crm-stats" },
+    // Add more CRM items as needed
+    // { name: "CRMContacts", label: "Contactos", icon: <FaUsers className="md:w-5 md:h-6 text-white" />, path: "/contacts" },
+    // { name: "CRMWhatsAppChats", label: "Chats Activos", icon: <FaCommentDots className="md:w-5 md:h-6 text-white" />, path: "/whatsapp-chats" },
+    // Bottom section if needed
+    // { name: "CRMSettings", label: "Ajustes CRM", icon: <FaCog className="md:w-5 md:h-6 text-white" />, path: "/settings", section: "bottom" },
 ];
 
 // --- Modified getMenuItems --- 
@@ -61,6 +75,15 @@ const getMenuItems = (isInstagramConnected, toolContext) => {
         });
 
         return combinedSetterMenu; // Return only the main items
+    }
+    
+    // --- IF CRM CONTEXT IS ACTIVE --- 
+    if (toolContext === 'crm') {
+        // Get the main CRM items (filter out bottom section items)
+        const mainCrmItems = crmMenuItems.filter(item => !item.section);
+        
+        // Return all main CRM items
+        return mainCrmItems;
     }
 
     // --- IF CALENDAR CONTEXT IS ACTIVE --- 
@@ -111,6 +134,10 @@ const getBottomItems = (toolContext) => {
         // Filter setter items marked as 'bottom'
         return setterMenuItems.filter(item => item.section === 'bottom');
     }
+    if (toolContext === 'crm') {
+        // Filter crm items marked as 'bottom'
+        return crmMenuItems.filter(item => item.section === 'bottom');
+    }
     // Default bottom items (Prospector/Calendar)
     return [
         // { name: "Ajustes", label: "Ajustes", icon: "/assets/setting-2.png" }, // <-- Commented out
@@ -127,6 +154,7 @@ const Sidebar = ({
     toolContext = "prospector" // Default context
 }) => {
     const navigate = useNavigate();
+    const location = useLocation();
     const [user, setUser] = useState(null);
     const [userData, setUserData] = useState({});
     const [expandedMenu, setExpandedMenu] = useState(""); // State for EXPANDED dropdown (Herramientas OR Listas)
@@ -139,7 +167,7 @@ const Sidebar = ({
             { name: "Prospector", label: "Prospector", icon: <FaHome className="md:w-5 md:h-6 text-white" /> }, 
             { name: "Setter IA", label: "Setter IA", icon: <FaRobot className="md:w-5 md:h-6 text-white" /> }, 
             // { name: "Calendar", label: "Calendar", icon: <FaCalendarAlt className="md:w-5 md:h-6 text-white" /> },
-            // { name: "CRMWhatsApp", label: "CRM WhatsApp", icon: <FaWhatsapp className="md:w-5 md:h-6 text-white" /> }
+            { name: "CRM Kanban", label: "CRM Kanban", icon: <FaTasks className="md:w-5 md:h-6 text-white" /> },
         ]
     };
     
@@ -202,7 +230,7 @@ const Sidebar = ({
         // Determine target based on subItem
         if (parentItemName === "Herramientas") {
             if (subItem.name === "Setter IA") targetOption = "SetterConnections"; 
-            // else if (subItem.name === "Calendar") targetOption = "CalendarView"; // (Commented out)
+            else if (subItem.name === "CRM Kanban") targetOption = "CRMKanbanBoards";
             else if (subItem.name === "Prospector") {
                  console.log("[Sidebar Click] Prospector clicked. Setting targetOption to Home.");
                  targetOption = "Home"; 
@@ -409,7 +437,7 @@ Sidebar.propTypes = {
     selectedOption: PropTypes.string,
     setSelectedOption: PropTypes.func,
     isInstagramConnected: PropTypes.bool,
-    toolContext: PropTypes.oneOf(['prospector', 'setter', 'calendar']) // Add toolContext prop type
+    toolContext: PropTypes.oneOf(['prospector', 'setter', 'calendar', 'crm']) // Add toolContext prop type
 };
 
 Sidebar.defaultProps = {
