@@ -34,7 +34,6 @@ const WhatsAppCRM = ({ user }) => {
   const [messages, setMessages] = useState([]);
   const [newMessage, setNewMessage] = useState('');
   const [rules, setRules] = useState([]);
-  const [activeTab, setActiveTab] = useState('chats'); // 'chats', 'stats', 'agents', 'settings'
   const [errorMessage, setErrorMessage] = useState(null); // Para mostrar errores en la UI
   const [isConnectingWs, setIsConnectingWs] = useState(false);
   const [reconnectAttempts, setReconnectAttempts] = useState(0);
@@ -555,11 +554,6 @@ const WhatsAppCRM = ({ user }) => {
         
         console.log("Conversaciones procesadas y filtradas para CRM Inbox:", processedAndFilteredChats);
         setConversations(processedAndFilteredChats);
-        
-        // Cambiar a pestaña de chats si hay conversaciones
-        if (processedAndFilteredChats.length > 0) {
-          setActiveTab('chats');
-        }
       }
     } catch (error) {
       console.error("Error al cargar conversaciones:", error);
@@ -852,11 +846,12 @@ const WhatsAppCRM = ({ user }) => {
 
   // Componente de chat
   const ChatInterface = () => (
-    <div className="flex h-full bg-slate-50 font-['Poppins']">
+    // Main container with modern styling
+    <div className="flex h-full bg-slate-100 dark:bg-slate-850 font-['Poppins'] rounded-xl shadow-2xl overflow-hidden">
       {/* Lista de conversaciones */}
-      <div className="w-1/3 flex flex-col border-r border-slate-200">
+      <div className="w-1/3 flex flex-col border-r border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-750">
         {/* Header con Búsqueda y Filtros */}
-        <div className="p-4 space-y-3 border-b border-slate-200 bg-white">
+        <div className="p-4 space-y-3 border-b border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800">
           <div className="relative">
             <FaSearch className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
             <input 
@@ -877,39 +872,43 @@ const WhatsAppCRM = ({ user }) => {
         </div>
         
         {/* Lista de Chats */}
-        <div className="flex-grow overflow-y-auto divide-y divide-slate-200">
+        <div className="flex-grow overflow-y-auto divide-y divide-slate-200 dark:divide-slate-700">
           {conversations && conversations.length > 0 ? (
             conversations.map(chat => (
               <div 
                 key={chat.id || chat.phoneNumber} 
-                className={`p-3 cursor-pointer transition-colors ${selectedChat?.id === chat.id ? 'bg-purple-50 hover:bg-purple-100' : 'hover:bg-slate-100'}`}
+                className={`p-4 cursor-pointer transition-all duration-150 ease-in-out border-l-4 ${ 
+                  selectedChat?.id === chat.id 
+                    ? 'border-purple-600 bg-purple-50 dark:bg-slate-700' 
+                    : 'border-transparent hover:bg-slate-100 dark:hover:bg-slate-700'
+                }`}
                 onClick={() => selectChat(chat)}
               >
                 <div className="flex items-center space-x-3">
                   {/* Avatar */}
-                  <div className="relative">
-                    <div className="w-12 h-12 bg-gradient-to-br from-purple-500 to-blue-500 rounded-full flex items-center justify-center text-white text-xl font-medium">
-                      {/* Placeholder for initials or image */}
-                      {chat.name ? chat.name.substring(0,1).toUpperCase() : <FaUser size={20}/>}
+                  <div className="relative flex-shrink-0">
+                    <div className="w-12 h-12 bg-gradient-to-br from-purple-500 to-blue-500 rounded-full flex items-center justify-center text-white text-xl font-semibold shadow-md">
+                      {chat.name ? chat.name.substring(0,1).toUpperCase() : <FaUser size={22}/>}
                     </div>
-                    {/* Status indicator example */}
-                    {/* <span className="absolute bottom-0 right-0 block h-3 w-3 rounded-full bg-green-400 ring-2 ring-white" /> */}
+                    {/* Online status indicator (optional, if data available) */}
+                    {/* <span className={`absolute bottom-0 right-0 block h-3.5 w-3.5 rounded-full ring-2 ${selectedChat?.id === chat.id ? 'ring-purple-50 dark:ring-slate-700' : 'ring-slate-50 dark:ring-slate-750'} bg-green-400`} /> */}
                   </div>
                   
                   <div className="flex-1 min-w-0">
-                    <div className="flex justify-between items-center">
-                      <p className="text-sm font-semibold text-slate-800 truncate">
+                    <div className="flex justify-between items-start">
+                      <p className="text-base font-semibold text-slate-800 dark:text-slate-100 truncate">
                         {chat.name || formatPhoneNumber(chat.phoneNumber)}
                       </p>
-                      <p className="text-xs text-slate-400">
-                        {/* Placeholder for timestamp */}
-                        {chat.lastMessageTimestamp ? new Date(chat.lastMessageTimestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : '10:30 AM'}
+                      <p className={`text-xs whitespace-nowrap ${selectedChat?.id === chat.id ? 'text-purple-700 dark:text-purple-300' : 'text-slate-400 dark:text-slate-500'}`}>
+                        {chat.lastMessageTimestamp ? new Date(chat.lastMessageTimestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : ''}
                       </p>
                     </div>
-                    <div className="flex justify-between items-center">
-                      <p className="text-sm text-slate-500 truncate">{chat.lastMessage || 'Haz click para ver detalles'}</p>
+                    <div className="flex justify-between items-center mt-1">
+                      <p className={`text-sm truncate ${selectedChat?.id === chat.id ? 'text-slate-600 dark:text-slate-300' : 'text-slate-500 dark:text-slate-400'}`}>
+                        {chat.lastMessage || 'Haz click para ver detalles'}
+                      </p>
                       {chat.unreadCount > 0 && (
-                        <div className="bg-purple-500 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs font-semibold">
+                        <div className="bg-purple-600 text-white rounded-full min-w-[20px] h-5 flex items-center justify-center text-xs font-medium px-1.5 py-0.5 shadow">
                           {chat.unreadCount}
                         </div>
                       )}
@@ -932,49 +931,62 @@ const WhatsAppCRM = ({ user }) => {
       </div>
       
       {/* Panel de mensajes */}
-      <div className="w-2/3 flex flex-col bg-slate-100">
+      <div className="w-2/3 flex flex-col bg-white dark:bg-slate-850">
         {selectedChat ? (
           <>
-            {/* Cabecera del chat */}
-            <div className="p-3 border-b border-slate-200 bg-white flex justify-between items-center shadow-sm">
+            {/* Cabecera del chat mejorada */}
+            <div className="p-4 border-b border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 flex justify-between items-center shadow-sm">
               <div className="flex items-center space-x-3">
-                 <div className="w-10 h-10 bg-gradient-to-br from-purple-500 to-blue-500 rounded-full flex items-center justify-center text-white text-lg font-medium">
-                    {selectedChat.name ? selectedChat.name.substring(0,1).toUpperCase() : <FaUser size={18}/>}
+                 <div className="relative flex-shrink-0">
+                    <div className="w-11 h-11 bg-gradient-to-br from-purple-500 to-blue-500 rounded-full flex items-center justify-center text-white text-lg font-semibold shadow">
+                        {selectedChat.name ? selectedChat.name.substring(0,1).toUpperCase() : <FaUser size={20}/>}
+                    </div>
+                    {/* Example online indicator dot - logic for actual status needed separately */}
+                    {/* <span className="absolute bottom-0 right-0 block h-3 w-3 rounded-full bg-green-400 ring-2 ring-white dark:ring-slate-800" /> */} 
                  </div>
                 <div>
-                  <h3 className="font-semibold text-slate-800">{selectedChat.name || formatPhoneNumber(selectedChat.phoneNumber)}</h3>
-                  <p className="text-xs text-green-500">
-                     {connectionStatus === 'connected' ? '● En línea' : '○ Desconectado'}
+                  <h3 className="font-semibold text-slate-800 dark:text-slate-100 text-lg">
+                    {selectedChat.name || formatPhoneNumber(selectedChat.phoneNumber)}
+                  </h3>
+                  <p className={`text-xs ${connectionStatus === 'connected' && wsRef.current?.readyState === WebSocket.OPEN ? 'text-green-500' : 'text-slate-400'}`}>
+                     {connectionStatus === 'connected' && wsRef.current?.readyState === WebSocket.OPEN ? '● En línea' : '○ Desconectado'}
                   </p>
                 </div>
               </div>
-              <div>
+              <div className="flex items-center space-x-2">
                 <button 
                   onClick={() => openAssignToKanbanModal(selectedChat)}
-                  className="px-3 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors flex items-center text-sm shadow-md hover:shadow-lg"
+                  className="px-4 py-2 bg-gradient-to-r from-purple-600 to-blue-500 hover:from-purple-700 hover:to-blue-600 text-white rounded-lg flex items-center text-sm transition-all shadow-md hover:shadow-lg focus:ring-4 focus:ring-purple-300"
                   title="Asignar este chat a un tablero Kanban"
                   disabled={!selectedChat.id}
                 >
-                  <FaTasks className="mr-2" /> Asignar a Kanban
+                  <FaTasks className="mr-2" /> Asignar
+                </button>
+                {/* Placeholder Action Icons */}
+                <button className="p-2 text-slate-500 dark:text-slate-400 hover:text-purple-600 dark:hover:text-purple-400 rounded-full hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors">
+                    <FaSearch size={18}/>
+                </button>
+                <button className="p-2 text-slate-500 dark:text-slate-400 hover:text-purple-600 dark:hover:text-purple-400 rounded-full hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors">
+                    <FaCog size={18}/>{/* Using FaCog as a general 'more options' placeholder */}
                 </button>
               </div>
             </div>
             
             {/* Área de mensajes */}
-            <div className="flex-1 overflow-y-auto p-4 space-y-3">
+            <div className="flex-1 overflow-y-auto p-6 space-y-4 bg-slate-100 dark:bg-slate-900">
               {messages && messages.length > 0 ? (
                 messages.map(msg => (
                   <div 
                     key={msg.id || (String(msg.timestamp) + '-' + Math.random().toString(36).substr(2, 9))} 
-                    className={'flex ' + (msg.fromMe ? 'justify-end' : 'justify-start')}
+                    className={`flex ${msg.fromMe ? 'justify-end' : 'justify-start'}`}
                   >
-                    <div className={`max-w-md p-3 rounded-xl shadow-sm ${
+                    <div className={`max-w-xl px-4 py-3 rounded-2xl shadow-md ${ 
                       msg.fromMe 
-                        ? 'bg-gradient-to-br from-purple-600 to-blue-500 text-white' 
-                        : 'bg-white text-slate-700 border border-slate-200'
+                        ? 'bg-gradient-to-br from-purple-600 to-blue-500 text-white rounded-br-lg' 
+                        : 'bg-white dark:bg-slate-700 text-slate-700 dark:text-slate-100 rounded-bl-lg border border-slate-200 dark:border-slate-600'
                     }`}>
-                      <p className="text-sm">{msg.body}</p>
-                      <p className={`text-xs mt-1 ${msg.fromMe ? 'text-purple-200' : 'text-slate-400'} text-right`}>
+                      <p className="text-sm whitespace-pre-wrap">{msg.body}</p>
+                      <p className={`text-xs mt-1.5 ${msg.fromMe ? 'text-purple-200 text-opacity-80' : 'text-slate-400 dark:text-slate-500'} text-right`}>
                         {msg.timestamp ? new Date(msg.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : ''}
                       </p>
                     </div>
@@ -988,24 +1000,24 @@ const WhatsAppCRM = ({ user }) => {
               )}
             </div>
             
-            {/* Área de entrada de mensajes */}
-            <div className="p-3 border-t border-slate-200 bg-white shadow-top">
-              <div className="flex items-center space-x-2">
-                <button className="p-2 text-slate-500 hover:text-purple-600 rounded-full hover:bg-purple-100 transition">
-                  {/* Placeholder for attachment icon */}
+            {/* Área de entrada de mensajes mejorada */}
+            <div className="p-4 border-t border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800">
+              <div className="flex items-center space-x-3 bg-slate-100 dark:bg-slate-700 p-1 rounded-xl">
+                <button className="p-3 text-slate-500 dark:text-slate-400 hover:text-purple-600 dark:hover:text-purple-400 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-600 transition-colors">
                   <FaPaperclip size={20} />
                 </button>
                 <input 
                   type="text" 
                   placeholder="Escribe un mensaje..." 
-                  className="flex-1 p-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 outline-none shadow-sm"
                   value={newMessage}
                   onChange={(e) => setNewMessage(e.target.value)}
-                  onKeyPress={(e) => e.key === 'Enter' && sendMessage()}
+                  onKeyPress={(e) => e.key === 'Enter' && !e.shiftKey ? (e.preventDefault(), sendMessage()) : null}
+                  className="flex-grow p-3 bg-transparent text-slate-700 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none"
                 />
                 <button 
-                  className="p-3 bg-gradient-to-br from-purple-600 to-blue-500 text-white rounded-lg hover:from-purple-700 hover:to-blue-600 transition shadow-md hover:shadow-lg"
-                  onClick={sendMessage}
+                  onClick={sendMessage} 
+                  disabled={!newMessage.trim() || connectionStatus !== 'connected' || wsRef.current?.readyState !== WebSocket.OPEN}
+                  className="p-3 rounded-lg bg-gradient-to-r from-purple-600 to-blue-500 hover:from-purple-700 hover:to-blue-600 text-white transition-all shadow-md hover:shadow-lg disabled:opacity-60 disabled:cursor-not-allowed flex items-center justify-center"
                 >
                   <FaPaperPlane size={18} />
                 </button>
@@ -1137,92 +1149,46 @@ const WhatsAppCRM = ({ user }) => {
 
   // Vista principal tipo Kanban
   return (
-    <div className="h-full flex flex-col bg-gray-100">
-      <div className="p-4 border-b border-gray-200 bg-white shadow-sm">
-        <h2 className="text-2xl font-bold flex items-center">
-          <FaWhatsapp className="text-green-500 mr-2" />
-          CRM WhatsApp
+    <div className="h-full flex flex-col bg-slate-100 dark:bg-slate-900 text-slate-800 dark:text-slate-200 font-['Poppins'] rounded-3xl">
+      <div className="p-4 border-b border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 shadow-sm rounded-3xl">
+        <h2 className="text-2xl font-bold flex items-center text-slate-800 dark:text-slate-100">
+          <FaWhatsapp className="text-green-500 mr-3" />
+          Bandeja de Entrada WhatsApp
         </h2>
       </div>
       
       {/* Mostrar mensaje de error si existe */}
       {errorMessage && (
-        <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mx-4 mt-4 relative">
+        <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mx-4 mt-4 relative shadow">
           <strong className="font-bold">Error: </strong>
           <span className="block sm:inline">{errorMessage}</span>
           <button 
             className="absolute top-0 bottom-0 right-0 px-4 py-3"
             onClick={() => setErrorMessage(null)}
           >
-            <span className="text-red-500">×</span>
+            <span className="text-red-500 text-xl font-bold hover:text-red-700">&times;</span>
           </button>
         </div>
       )}
       
       {/* Panel de información de conexión */}
-      <div className="bg-blue-100 border-l-4 border-blue-500 text-blue-700 p-4 mx-4 mt-4">
+      <div className="bg-blue-100 dark:bg-sky-900 border-l-4 border-blue-500 dark:border-sky-400 text-blue-700 dark:text-sky-200 p-4 mx-4 mt-4 rounded-r-md shadow">
         <p className="flex items-center">
           <FaWhatsapp className="inline mr-2" /> 
-          Conexión WhatsApp: {connectionStatus === 'connected' ? 'Activa' : 'Inactiva'} - Este CRM solo muestra conversaciones de conexiones establecidas en Setter
+          Estado: {connectionStatus === 'connected' ? 'Conectado y Activo' : connectionStatus === 'connecting' ? 'Conectando...' : connectionStatus === 'reconnecting' ? 'Reconectando...' : connectionStatus === 'generating_qr' ? 'Generando QR...' : 'Desconectado'}
+          {connectionStatus !== 'connected' && <span className="ml-2 text-xs">(Funcionalidad de envío/recepción limitada)</span>}
         </p>
       </div>
       
-      <div className="p-4">
-        <div className="flex mb-4 bg-white rounded-lg overflow-hidden shadow-sm">
-          <button 
-            className={`px-4 py-2 ${activeTab === 'chats' ? 'bg-green-500 text-white' : 'hover:bg-gray-100'}`}
-            onClick={() => setActiveTab('chats')}
-          >
-            Chats
-          </button>
-          <button 
-            className={`px-4 py-2 ${activeTab === 'stats' ? 'bg-green-500 text-white' : 'hover:bg-gray-100'}`}
-            onClick={() => setActiveTab('stats')}
-          >
-            Estadísticas
-          </button>
-          <button 
-            className={`px-4 py-2 ${activeTab === 'agents' ? 'bg-green-500 text-white' : 'hover:bg-gray-100'}`}
-            onClick={() => setActiveTab('agents')}
-          >
-            Agentes
-          </button>
-          <button 
-            className={`px-4 py-2 ${activeTab === 'rules' ? 'bg-green-500 text-white' : 'hover:bg-gray-100'}`}
-            onClick={() => setActiveTab('rules')}
-          >
-            Reglas
-          </button>
-          <button 
-            className={`px-4 py-2 ${activeTab === 'settings' ? 'bg-green-500 text-white' : 'hover:bg-gray-100'}`}
-            onClick={() => setActiveTab('settings')}
-          >
-            Configuración
-          </button>
-        </div>
-        
-        <div className="flex-1 overflow-hidden bg-white rounded-lg shadow-sm">
-          {activeTab === 'chats' && (
-            connectionStatus === 'connected' ? (
-              <ChatInterface />
-            ) : (
-              <div className="p-4">
-                {/* Si hay conversaciones disponibles, mostrar la interfaz de chat incluso si no está conectado */}
-                {conversations.length > 0 && (
-                  <div className="mt-8">
-                    <div className="bg-yellow-100 border-l-4 border-yellow-500 text-yellow-700 p-4 mb-4">
-                      <p>WhatsApp no está conectado, pero puedes ver tus conversaciones anteriores.</p>
-                    </div>
-                    <ChatInterface />
-                  </div>
-                )}
-              </div>
-            )
-          )}
-          {activeTab === 'stats' && <StatsPanel />}
-          {activeTab === 'agents' && <AgentsPanel />}
-          {activeTab === 'rules' && <RulesPanel />}
-          {activeTab === 'settings' && <ConnectionPanel />}
+      {/* Contenedor principal para la interfaz de chat */}
+      <div className="flex-1 p-4 overflow-hidden">
+        {/* Envolver ChatInterface para que tome el espacio restante y maneje su propio overflow */}
+        <div className="h-full w-full overflow-hidden">
+          {/* Renderizar ChatInterface directamente.
+              Se espera que ChatInterface maneje su propia altura interna con h-full 
+              y que sus componentes internos (lista de chats, panel de mensajes) sean scrollables.
+          */}
+          <ChatInterface />
         </div>
       </div>
 
