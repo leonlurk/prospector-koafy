@@ -203,6 +203,31 @@ export const disconnectWhatsApp = async (userId) => {
   }
 };
 
+// Nuevos servicios para pausar/reactivar el bot
+export const pauseWhatsAppBot = async (userId, pause = true) => {
+  try {
+    const response = await axios({
+      ...createFetchOptions('POST', { pause }),
+      url: `${API_BASE_URL}/bot/${userId}/pause`
+    });
+    return handleResponse(response);
+  } catch (error) {
+    return handleApiError(error);
+  }
+};
+
+export const getBotStatus = async (userId) => {
+  try {
+    const response = await axios({
+      ...createFetchOptions('GET'),
+      url: `${API_BASE_URL}/bot/${userId}/status`
+    });
+    return handleResponse(response);
+  } catch (error) {
+    return handleApiError(error);
+  }
+};
+
 export const getWhatsAppStats = async (userId, period = 'week') => {
   try {
     const response = await axios({

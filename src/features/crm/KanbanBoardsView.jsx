@@ -594,7 +594,7 @@ const KanbanBoardsView = () => {
       {!isLoadingBoards && boards.length > 0 && (
         <div className="mb-8">
           <h2 className="text-xl font-semibold text-slate-700 mb-3">Mis Tableros</h2>
-          <div className="flex overflow-x-auto space-x-4 pb-4 scrollbar-thin scrollbar-thumb-slate-300 hover:scrollbar-thumb-slate-400 active:scrollbar-thumb-slate-500">
+          <div className="flex overflow-x-auto space-x-4 pb-4 scrollbar-thin scrollbar-thumb-slate-300 hover:scrollbar-thumb-slate-400 scrollbar-track-transparent">
           {boards.map(board => (
               <div 
                 key={board.id} 
@@ -664,7 +664,7 @@ const KanbanBoardsView = () => {
             
             {error && error.includes("índice en Firestore") && (<FirestoreIndexAlert error={error} />)}
             
-            <div className="flex flex-nowrap overflow-x-auto space-x-4 pb-4 min-h-[600px] bg-slate-100 p-4 rounded-lg">
+            <div className="flex flex-col md:flex-row md:flex-nowrap md:overflow-x-auto md:space-x-4 space-y-4 md:space-y-0 pb-4 md:min-h-[600px] bg-slate-100 p-4 rounded-lg scrollbar-thin scrollbar-thumb-slate-300 hover:scrollbar-thumb-slate-400 scrollbar-track-slate-100">
               {(boardDetails?.board?.columns_order || Object.keys(columnsState).filter(cid => columnsState[cid] && !columnsState[cid].isUnassigned)) 
                 .map(columnId => columnsState[columnId])
                 .concat(columnsState['unassigned'] ? [columnsState['unassigned']] : []) 
@@ -675,7 +675,7 @@ const KanbanBoardsView = () => {
                       <div
                         ref={provided.innerRef}
                         {...provided.droppableProps}
-                        className={`bg-slate-200 rounded-xl p-3 min-w-[320px] w-[320px] flex flex-col shadow-lg ${snapshot.isDraggingOver ? 'bg-purple-100' : ''}`}
+                        className={`bg-slate-200 rounded-xl p-3 w-full md:min-w-[320px] md:w-[320px] flex flex-col shadow-lg ${snapshot.isDraggingOver ? 'bg-purple-100' : ''}`}
                       >
                         <div className="flex justify-between items-center mb-3 px-1 group">
                           <h3 className="font-semibold text-lg text-slate-700 capitalize truncate pr-2">{column.name}</h3>
@@ -703,7 +703,7 @@ const KanbanBoardsView = () => {
                             )}
                           </div>
                         </div>
-                        <div className="space-y-3 min-h-[450px] flex-grow overflow-y-auto p-1 rounded-md scrollbar-thin scrollbar-thumb-slate-300 hover:scrollbar-thumb-slate-400 scrollbar-track-transparent">
+                        <div className="space-y-3 md:min-h-[450px] flex-grow overflow-y-auto p-1 rounded-md scrollbar-thin scrollbar-thumb-slate-300 hover:scrollbar-thumb-slate-400 scrollbar-track-transparent">
                           {(column.chats || []).map((chat, index) => (
                             <Draggable key={chat.chatId || chat.id} draggableId={chat.chatId || chat.id} index={index}>
                               {(providedDraggable, snapshotDraggable) => (

@@ -6,6 +6,7 @@ import { getAgent } from '../services/api';
 // Importar componentes MUI necesarios para la nueva estructura
 import { Box, Typography, Paper, Tabs, Tab, CircularProgress, Fade, Button } from '@mui/material'; 
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
+import { useTemporaryAgent } from '../context/TemporaryAgentContext';
 // import { useAuth } from '../../../context/AuthContext'; // This seems unused, consider removing if not needed elsewhere
 
 // Child components for tabs (assuming they exist)
@@ -25,11 +26,13 @@ const tabs = [
 // Accept props: agentId, user, selectedOptionValue (renamed for clarity), setSelectedOption function
 function AgentDetailPage({ agentId, user, selectedOption: selectedOptionValue, setSelectedOption }) { 
     const { currentUser } = useWhatsApp(); 
+    const { temporaryAgent } = useTemporaryAgent();
     const [agentData, setAgentData] = useState(null); 
     const [isLoading, setIsLoading] = useState(true); 
     const [error, setError] = useState(null); 
     // Active tab is now primarily driven by local state, updated onClick
     const [activeTabId, setActiveTabId] = useState('Persona'); // Default to Persona
+    const isTemporaryAgent = agentId === 'temp';
 
     // Effect to set the *initial* active tab based on the prop when the component mounts *or* agentId changes
     useEffect(() => {
@@ -55,7 +58,15 @@ function AgentDetailPage({ agentId, user, selectedOption: selectedOptionValue, s
 
     // useEffect to load agent data (remains largely the same)
     useEffect(() => {
-       // ... (loading logic using agentId prop as before) ...
+        // Si es un agente temporal, usar los datos del contexto en lugar de cargar con getAgent
+        if (isTemporaryAgent && temporaryAgent) {
+            console.log("AgentDetail: Usando datos de agente temporal del contexto");
+            setAgentData(temporaryAgent);
+            setIsLoading(false);
+            setError(null);
+            return;
+        }
+
         const userId = user?.uid || currentUser?.uid;
         
         if (!userId || !agentId) { 
@@ -99,7 +110,7 @@ function AgentDetailPage({ agentId, user, selectedOption: selectedOptionValue, s
                 setIsLoading(false);
             });
 
-    }, [user, currentUser, agentId]); 
+    }, [user, currentUser, agentId, isTemporaryAgent, temporaryAgent]); 
 
     // Handler para cambio de pestaña usando MUI Tabs
     const handleTabChange = (event, newTabId) => {
@@ -134,7 +145,7 @@ function AgentDetailPage({ agentId, user, selectedOption: selectedOptionValue, s
         let content = null;
         switch (activeTabId) {
             case 'Persona':
-                content = <PersonaAIPage agentData={agentData} user={user || currentUser} agentId={agentId} />;
+                content = <PersonaAIPage agentData={agentData} user={user || currentUser} agentId={agentId} setSelectedOption={setSelectedOption} />;
                 break;
             case 'Knowledge':
                 content = <KnowledgeBasePage agentData={agentData} user={user || currentUser} agentId={agentId} />;

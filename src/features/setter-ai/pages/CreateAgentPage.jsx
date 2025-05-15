@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import OptionCard from '../components/OptionCard';
-import { createAgent } from '../services/api';
+import { useTemporaryAgent } from '../context/TemporaryAgentContext';
+import { useWhatsApp } from '../context/WhatsAppContext';
 
 // Heroicons SVG
 const PlusCircleIcon = (props) => (
@@ -29,28 +30,31 @@ const UserCircleIcon = (props) => (
 function CreateAgentPage() {
   const navigate = useNavigate();
   const [isLoading, setIsLoading] = useState(false);
+  const { createTemporaryAgent } = useTemporaryAgent();
+  const { currentUser } = useWhatsApp();
 
   // Navegar al paso intermedio o crear directamente si es 'scratch'
-  const handleOptionClick = async (optionType) => {
+  const handleOptionClick = (optionType) => {
     setIsLoading(true); // Mostrar feedback general
     console.log(`Opción seleccionada: ${optionType}`);
 
     if (optionType === 'scratch') {
-      // Crear directamente y navegar a persona
-      try {
-        const response = await createAgent({ type: 'scratch', name: 'Nuevo Agente (desde cero)' });
-        if (response?.success && response.agentId) {
-          // Asegurar navegación explícita a la ruta de la pestaña 'persona'
-          console.log(`Navegando a /agents/${response.agentId}/persona tras crear desde cero.`);
-          navigate(`/agents/${response.agentId}/persona`);
-        } else {
-          console.error("Error simulado al crear agente 'scratch':", response?.message);
-          setIsLoading(false); // Permitir reintentar
-        }
-      } catch (error) {
-        console.error("Error real al crear agente 'scratch':", error);
-        setIsLoading(false);
-      }
+      // Create a temporary agent (not saved to database yet)
+      const tempAgent = {
+        type: 'scratch',
+        persona: {
+          name: 'Nuevo Agente (desde cero)',
+          instructions: '',
+          language: 'es'
+        },
+        knowledge: {}
+      };
+      
+      createTemporaryAgent(tempAgent);
+      
+      // Navigate to the persona setup page
+      navigate('/agents/temp/persona');
+      setIsLoading(false);
     } else if (optionType === 'form') {
       navigate('/agents/new/select-form');
     } else if (optionType === 'template') {
@@ -58,8 +62,6 @@ function CreateAgentPage() {
     } else if (optionType === 'clone') {
       navigate('/agents/new/select-clone');
     }
-    // setIsLoading(false) no se llama aquí intencionadamente si la navegación tiene éxito para evitar parpadeos
-    // y permitir que la nueva página maneje su propio estado de carga.
   };
 
   return (

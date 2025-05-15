@@ -5,9 +5,11 @@ import { doc, deleteDoc } from "firebase/firestore";
 import { db } from '../../../firebaseConfig';
 import OptionCard from '../components/OptionCard';
 import agentImageUrl from '../assets/agent.png';
-import { FaTrash } from 'react-icons/fa';
+import { FaTrash, FaPause, FaPlay } from 'react-icons/fa';
 import Button from '@mui/material/Button';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
+import { useTemporaryAgent } from '../context/TemporaryAgentContext';
+import { useNavigate } from 'react-router-dom';
 
 // --- Placeholder Icons --- 
 const SearchIcon = (props) => (
@@ -24,13 +26,13 @@ const ChevronDownIcon = (props) => (
 
 const UserGroupIcon = (props) => (
   <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" {...props}>
-    <path strokeLinecap="round" strokeLinejoin="round" d="M18 18.72a9.094 9.094 0 003.741-.479 3 3 0 00-4.682-2.72m.008-2.72c.065-.916.343-1.797.788-2.596l.088-.114m-4.056 2.72a3 3 0 00-4.682 2.72m0 0a3 3 0 00-4.682-2.72m2.943-2.72a3 3 0 014.682 0m0 0a3 3 0 01-.479 3.741M12 12a3 3 0 11-6 0 3 3 0 016 0zM14.25 9a3 3 0 11-6 0 3 3 0 016 0zM4.5 19.5a3 3 0 00-3-3v-1.5a3 3 0 003 3h1.5a3 3 0 003-3v-1.5a3 3 0 00-3-3H4.5m6.75 6a3 3 0 01-3-3v-1.5a3 3 0 013-3h1.5a3 3 0 013 3v1.5a3 3 0 01-3 3h-1.5zm5.25 3.75a3 3 0 00-3-3v-1.5a3 3 0 003-3h1.5a3 3 0 003 3v1.5a3 3 0 00-3 3h-1.5z" />
+    <path strokeLinecap="round" strokeLinejoin="round" d="M18 18.72a9.094 9.094 0 0 0 3.741-.479 3 3 0 0 0-4.682-2.72m.94 3.198.001.031c0 .225-.012.447-.037.666A11.944 11.944 0 0 1 12 21c-2.17 0-4.207-.576-5.963-1.584A6.062 6.062 0 0 1 6 18.719m12 0a5.971 5.971 0 0 0-.941-3.197m0 0A5.995 5.995 0 0 0 12 12.75a5.995 5.995 0 0 0-5.058 2.772m0 0a3 3 0 0 0-4.681 2.72 8.986 8.986 0 0 0 3.74.477m.94-3.197a5.971 5.971 0 0 0-.94 3.197M15 6.75a3 3 0 1 1-6 0 3 3 0 0 1 6 0Zm6 3a2.25 2.25 0 1 1-4.5 0 2.25 2.25 0 0 1 4.5 0Zm-13.5 0a2.25 2.25 0 1 1-4.5 0 2.25 2.25 0 0 1 4.5 0Z" />
   </svg>
 );
 
 const AdjustmentsHorizontalIcon = (props) => (
   <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" {...props}>
-    <path strokeLinecap="round" strokeLinejoin="round" d="M10.5 6h9.75M10.5 6a1.5 1.5 0 11-3 0m3 0a1.5 1.5 0 10-3 0M3.75 6H7.5m3 12h9.75m-9.75 0a1.5 1.5 0 01-3 0m3 0a1.5 1.5 0 00-3 0m-3.75 0H7.5m9-6h3.75m-3.75 0a1.5 1.5 0 01-3 0m3 0a1.5 1.5 0 00-3 0m-9.75 0h9.75" />
+    <path strokeLinecap="round" strokeLinejoin="round" d="M10.5 6h9.75M10.5 6a1.5 1.5 0 1 1-3 0m3 0a1.5 1.5 0 1 0-3 0M3.75 6H7.5m3 12h9.75m-9.75 0a1.5 1.5 0 0 1-3 0m3 0a1.5 1.5 0 0 0-3 0m-3.75 0H7.5m9-6h3.75m-3.75 0a1.5 1.5 0 0 1-3 0m3 0a1.5 1.5 0 0 0-3 0m-9.75 0h9.75" />
   </svg>
 );
 
@@ -48,7 +50,7 @@ const BoltIcon = (props) => (
 
 const ArrowPathIcon = (props) => (
   <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" {...props}>
-    <path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99" />
+    <path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M2.985 19.644a8.25 8.25 0 0 0 2.02-13.804l3.181 3.182m0-4.991v4.99" />
   </svg>
 );
 
@@ -170,17 +172,20 @@ function AgentListPage({ setSelectedOption }) {
   
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedPlatform, setSelectedPlatform] = useState('all');
-  const { currentUser } = useWhatsApp();
+  const { currentUser, botStatus, toggleBotPause } = useWhatsApp();
   const [agents, setAgents] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
   const [activeAgentId, setActiveAgentId] = useState(null);
   const [activatingAgentId, setActivatingAgentId] = useState(null);
   const [deletingAgentId, setDeletingAgentId] = useState(null);
+  const [togglingPauseId, setTogglingPauseId] = useState(null);
   
   // State to control view toggle
   const [showInitialCreationView, setShowInitialCreationView] = useState(false);
   const [isCreatingAgent, setIsCreatingAgent] = useState(false); // Loading state for creation
+  const { createTemporaryAgent } = useTemporaryAgent();
+  const navigate = useNavigate();
 
   useEffect(() => {
     if (!currentUser?.uid) {
@@ -247,6 +252,23 @@ Error agentes: ${agentsResponse.data?.message || agentsResponse.message}` : `Err
       }
   };
 
+  // Nueva función para manejar la pausa/activación del bot
+  const handleToggleBotPause = async (e) => {
+    e.stopPropagation(); // Evitar que el evento se propague al hacer clic en el botón
+    
+    if (!currentUser?.uid) return;
+    
+    setTogglingPauseId('togglePause'); // Indicador de carga
+    
+    try {
+      await toggleBotPause(); // Usa la función del contexto
+    } catch (err) {
+      setError(`Error al cambiar el estado del bot: ${err.message}`);
+    } finally {
+      setTogglingPauseId(null);
+    }
+  };
+
   // Modified: Navigate to creation view instead of direct API call
   const handleNavigateToCreate = () => {
       setShowInitialCreationView(true);
@@ -268,73 +290,51 @@ Error agentes: ${agentsResponse.data?.message || agentsResponse.message}` : `Err
     }
 
     if (optionType === 'scratch') {
-      setIsCreatingAgent(true);
-      setError(null);
-
-      try {
-        console.log("[handleCreationOptionClick] Creating agent from scratch...");
-        const payload = {
-          type: 'scratch',
-          persona: {
-            name: 'Nuevo Agente (desde cero)'
-          },
-          knowledge: {}
-        };
-        console.log("[handleCreationOptionClick] Payload for scratch agent:", payload);
-        const response = await createAgent(currentUser.uid, payload);
-
-        if (response?.success && response.agentId) {
-          console.log(`[handleCreationOptionClick] Agent created from scratch, ID: ${response.agentId}. Setting selectedOption to detail view...`);
-          setSelectedOption(`SetterAgentDetail_persona_${response.agentId}`); 
-          setShowInitialCreationView(false);
-      } else {
-          console.error("[handleCreationOptionClick] Error creating agent from scratch:", response?.message);
-          setError(response?.message || "Error al crear agente desde cero.");
-        }
-      } catch (error) {
-        console.error("[handleCreationOptionClick] Exception creating agent from scratch:", error);
-        setError(error.message || "Error excepcional al crear agente desde cero.");
-      } finally {
-      setIsCreatingAgent(false); 
-      }
+      // Crear un agente temporal (no guardado en base de datos todavía)
+      const tempAgent = {
+        type: 'scratch',
+        persona: {
+          name: 'Nuevo Agente (desde cero)',
+          instructions: '',
+          language: 'es'
+        },
+        knowledge: {}
+      };
+      
+      createTemporaryAgent(tempAgent);
+      
+      // En lugar de navegar a una ruta, usar setSelectedOption para cambiar la vista
+      setSelectedOption('SetterAgentDetail_Persona_temp');
+      setShowInitialCreationView(false);
     } else if (optionType === 'template' && templateKey) {
-      setIsCreatingAgent(true);
       setError(null);
       const templateData = agentTemplates[templateKey];
       if (!templateData) {
         setError(`Plantilla '${templateKey}' no encontrada.`);
-          setIsCreatingAgent(false);
-          return;
+        return;
       }
 
-      try {
-        const payload = {
-          type: 'template',
+      // Crear un agente temporal desde plantilla
+      const tempAgent = {
+        type: 'template',
+        templateId: templateKey,
+        persona: {
+          ...templateData.persona,
           name: templateData.persona.name || `Agente desde plantilla ${templateKey}`,
-          persona: templateData.persona,
-          knowledge: templateData.knowledge,
-        };
-        console.log("[handleCreationOptionClick] Creating agent from template with payload:", payload);
-        const response = await createAgent(currentUser.uid, payload);
-
-        if (response?.success && response.agentId) {
-          console.log(`[handleCreationOptionClick] Agent created from template, ID: ${response.agentId}. Setting selectedOption to detail view...`);
-          setSelectedOption(`SetterAgentDetail_persona_${response.agentId}`); 
-          setShowInitialCreationView(false);
-        } else {
-          console.error("[handleCreationOptionClick] Error creating agent from template:", response?.message);
-          setError(response?.message || "Error al crear agente desde plantilla.");
-        }
-      } catch (error) {
-        console.error("[handleCreationOptionClick] Exception creating agent from template:", error);
-        setError(error.message || "Error excepcional al crear agente desde plantilla.");
-      } finally {
-        setIsCreatingAgent(false);
-      }
+          language: 'es'
+        },
+        knowledge: templateData.knowledge || {}
+      };
+      
+      createTemporaryAgent(tempAgent);
+      
+      // En lugar de navegar a una ruta, usar setSelectedOption para cambiar la vista
+      setSelectedOption('SetterAgentDetail_Persona_temp');
+      setShowInitialCreationView(false);
     } else {
       console.warn('[handleCreationOptionClick] Unknown optionType or missing templateKey:', optionType, templateKey);
     }
-  }, [currentUser, setSelectedOption]);
+  }, [currentUser, setSelectedOption, createTemporaryAgent]);
 
   // --- NEW: Handle Agent Deletion ---
   const handleDeleteAgent = async (agentIdToDelete, agentName) => {
@@ -384,6 +384,34 @@ Error agentes: ${agentsResponse.data?.message || agentsResponse.message}` : `Err
   
   // --- RENDER LOGIC ---
 
+  const renderPlayPauseButton = () => {
+    const isPaused = botStatus?.isPaused;
+    const isLoading = togglingPauseId === 'togglePause' || botStatus?.isLoading;
+    
+    return (
+      <button
+        onClick={handleToggleBotPause}
+        disabled={isLoading}
+        className={`${
+          isPaused ? 'bg-green-500 hover:bg-green-600' : 'bg-yellow-500 hover:bg-yellow-600'
+        } text-white font-medium rounded-lg text-sm px-5 py-2.5 flex items-center justify-center transition-colors duration-300 disabled:opacity-50 disabled:cursor-not-allowed mr-2`}
+        title={isPaused ? 'Activar respuestas automáticas' : 'Pausar respuestas automáticas'}
+      >
+        {isLoading ? (
+          <ArrowPathIcon className="animate-spin h-5 w-5" />
+        ) : isPaused ? (
+          <>
+            <FaPlay className="mr-2" /> Activar
+          </>
+        ) : (
+          <>
+            <FaPause className="mr-2" /> Pausar
+          </>
+        )}
+      </button>
+    );
+  };
+
   const renderAgentListView = () => (
     <>
       {/* Header with Search, Filter, and NEW Button */}
@@ -401,24 +429,13 @@ Error agentes: ${agentsResponse.data?.message || agentsResponse.message}` : `Err
         </div>
          {/* Filter and New Agent Button */}
         <div className="flex items-center gap-4 w-full md:w-auto">
-           {/* Platform Select */}
-       {/*   <div className="relative">
-            <select 
-              value={selectedPlatform}
-              onChange={(e) => setSelectedPlatform(e.target.value)}
-              className="appearance-none h-12 w-full md:w-auto pl-4 pr-10 border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-indigo-300 text-sm shadow-sm"
-            >
-              <option value="all">Plataformas</option>
-              <option value="instagram">Instagram</option>
-              <option value="whatsapp">WhatsApp</option>
-            </select>
-            <ChevronDownIcon className="absolute right-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400 pointer-events-none" />
-          </div> */}
-           {/* Modified Button */}
+          {/* Botón global de pausa/play eliminado */}
+          
+          {/* Modified Button */}
           <button 
              onClick={handleNavigateToCreate} // Changed onClick handler
              disabled={isLoading || !currentUser} // Keep disabled logic
-            className="flex items-center justify-center h-12 px-6 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg shadow-sm transition duration-150 text-sm font-medium whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed"
+             className="flex items-center justify-center h-12 px-6 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg shadow-sm transition duration-150 text-sm font-medium whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <UserGroupIcon className="w-5 h-5 mr-2" />
             Nuevo Agente
@@ -427,7 +444,7 @@ Error agentes: ${agentsResponse.data?.message || agentsResponse.message}` : `Err
       </div>
 
        {/* Agent List */}
-        <div className="space-y-4">
+       <div className="space-y-4">
          {filteredAgents.map((agent) => {
               const isActive = agent.id === activeAgentId;
               const isActivating = agent.id === activatingAgentId;
@@ -454,57 +471,41 @@ Error agentes: ${agentsResponse.data?.message || agentsResponse.message}` : `Err
                     </div>
                   </div>
 
-                  <div className="flex items-center space-x-2 shrink-0">
-                     {isActive ? (
-                         <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                           <CheckCircleIcon className="w-4 h-4 mr-1" />
-                           Activo
-                         </span>
-                     ) : (
-                         <button 
-                           onClick={() => handleActivateAgent(agent.id)}
-                           disabled={isActivating || isDeleting}
-                           className={`inline-flex items-center justify-center px-3 py-1.5 border border-transparent text-xs font-medium rounded-md shadow-sm text-white transition duration-150 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 ${
-                               (isActivating || isDeleting) 
-                                 ? 'bg-gray-400 cursor-not-allowed' 
-                                 : 'bg-indigo-600 hover:bg-indigo-700'
-                           }`}
-                         >
-                           {isActivating ? (
-                               <>
-                                 <ArrowPathIcon className="animate-spin w-4 h-4 mr-1" />
-                                 Activando...
-                               </>
-                           ) : (
-                               <>
-                                 <BoltIcon className="w-4 h-4 mr-1" />
-                                 Activar
-                               </>
-                           )}
-                         </button>
-                     )}
-                     <button 
-                         onClick={() => setSelectedOption(`SetterAgentDetail_Persona_${agent.id}`)}
-                         disabled={isDeleting}
-                         className="text-gray-400 hover:text-indigo-600 p-2 rounded-full transition duration-150 disabled:opacity-50 disabled:cursor-not-allowed"
-                         aria-label="Configurar Agente"
-                         title="Configurar Agente"
-                     >
-                         <AdjustmentsHorizontalIcon className="w-6 h-6" />
-                     </button>
-                     <button 
-                         onClick={() => handleDeleteAgent(agent.id, agent.persona?.name)}
-                         disabled={isActivating || isDeleting || isActive}
-                         className={`text-gray-400 hover:text-red-600 p-2 rounded-full transition duration-150 disabled:opacity-50 disabled:cursor-not-allowed ${isActive ? 'hidden' : ''}`}
-                         aria-label="Eliminar Agente"
-                         title="Eliminar Agente"
-                     >
-                         {isDeleting ? (
-                            <ArrowPathIcon className="animate-spin w-5 h-5 text-red-500" />
-                         ) : (
-                            <FaTrash className="w-5 h-5" />
-                         )}
-                     </button>
+                  <div className="flex items-center space-x-2">
+                    {!isActive ? (
+                      <button 
+                        onClick={() => handleActivateAgent(agent.id)}
+                        disabled={isActivating || isDeleting}
+                        className="bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-1 rounded-md text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed transition duration-150"
+                      >
+                        {isActivating ? 'Activando...' : 'Activar'}
+                      </button>
+                    ) : (
+                      <span className="bg-green-100 text-green-800 text-xs font-semibold px-3 py-1 rounded-md">Activo</span>
+                    )}
+                    {isActive && renderPlayPauseButton()}
+                    <button 
+                        onClick={() => setSelectedOption(`SetterAgentDetail_Persona_${agent.id}`)}
+                        disabled={isDeleting}
+                        className="text-gray-400 hover:text-indigo-600 p-2 rounded-full transition duration-150 disabled:opacity-50 disabled:cursor-not-allowed"
+                        aria-label="Configurar Agente"
+                        title="Configurar Agente"
+                    >
+                        <AdjustmentsHorizontalIcon className="w-6 h-6" />
+                    </button>
+                    <button 
+                        onClick={() => handleDeleteAgent(agent.id, agent.persona?.name)}
+                        disabled={isActivating || isDeleting || isActive}
+                        className={`text-gray-400 hover:text-red-600 p-2 rounded-full transition duration-150 disabled:opacity-50 disabled:cursor-not-allowed ${isActive ? 'hidden' : ''}`}
+                        aria-label="Eliminar Agente"
+                        title="Eliminar Agente"
+                    >
+                        {isDeleting ? (
+                           <ArrowPathIcon className="animate-spin w-5 h-5 text-red-500" />
+                        ) : (
+                           <FaTrash className="w-5 h-5" />
+                        )}
+                    </button>
                   </div>
                 </div>
               );

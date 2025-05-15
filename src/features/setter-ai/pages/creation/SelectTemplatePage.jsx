@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Card from '../../components/Card';
 import Button from '../../components/Button';
-import { createAgent } from '../../services/api';
+import { useTemporaryAgent } from '../../context/TemporaryAgentContext';
 
 // Placeholder data for templates
 const availableTemplates = [
@@ -15,22 +15,34 @@ function SelectTemplatePage() {
   const navigate = useNavigate();
   const [selectedTemplateId, setSelectedTemplateId] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const { createTemporaryAgent } = useTemporaryAgent();
 
-  const handleCreate = async () => {
+  const handleCreate = () => {
      if (!selectedTemplateId) return;
      setIsLoading(true);
-     console.log(`Creando agente desde plantilla ID: ${selectedTemplateId}`);
+     console.log(`Creando agente temporal desde plantilla ID: ${selectedTemplateId}`);
+     
      try {
        const selectedTemplate = availableTemplates.find(t => t.id === selectedTemplateId);
-       const response = await createAgent({ type: 'template', name: selectedTemplate?.name || 'Agente desde Plantilla', templateId: selectedTemplateId });
-       if (response?.success && response.agentId) {
-         navigate(`/agents/${response.agentId}/persona`);
-       } else {
-         console.error("Error simulado creando agente desde plantilla");
-         setIsLoading(false);
-       }
+       
+       // Create temporary agent instead of persisting immediately
+       const tempAgent = {
+         type: 'template',
+         templateId: selectedTemplateId,
+         persona: {
+           name: selectedTemplate?.name || 'Agente desde Plantilla',
+           instructions: '', // Template-specific instructions could be added here
+           language: 'es'
+         },
+         knowledge: {}
+       };
+       
+       createTemporaryAgent(tempAgent);
+       
+       // Navigate to temporary agent persona setup
+       navigate('/agents/temp/persona');
      } catch (error) {
-       console.error("Error real creando agente:", error);
+       console.error("Error al crear agente temporal:", error);
        setIsLoading(false);
      }
    };
@@ -55,7 +67,7 @@ function SelectTemplatePage() {
 
       <div className="mt-8 flex justify-end">
         <Button onClick={handleCreate} disabled={!selectedTemplateId || isLoading}>
-          {isLoading ? 'Creando Agente...' : 'Crear Agente desde Plantilla'}
+          {isLoading ? 'Procesando...' : 'Continuar con esta Plantilla'}
         </Button>
       </div>
     </div>

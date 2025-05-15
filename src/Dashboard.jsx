@@ -30,6 +30,7 @@ import SetterAgentDetailPage from "./features/setter-ai/pages/AgentDetailPage";
 import WhatsAppPage from './features/setter-ai/pages/WhatsAppPage';
 import AgentDescriptionSetupPage from './features/setter-ai/pages/AgentDescriptionSetupPage'; 
 import KnowledgeBasePage from './features/setter-ai/pages/KnowledgeBasePage'; // Asumiendo que estos se usan si se navega directamente
+import { TemporaryAgentProvider } from "./features/setter-ai/context/TemporaryAgentContext";
 
 // Importar el nuevo componente Documentos
 import Documentos from './Documentos';
@@ -843,7 +844,7 @@ const Dashboard = () => {
         case 'SetterActionFlow':
              return <div>Página Action Flow (Requiere Agente)</div>;
         case 'SetterAgents': 
-      return <SetterAgentsPage user={user} setSelectedOption={setSelectedOption} />;
+      return <TemporaryAgentProvider><SetterAgentsPage user={user} setSelectedOption={setSelectedOption} /></TemporaryAgentProvider>;
         case 'SetterAgentDescriptionSetup': {
              console.warn("Attempted to render deprecated SetterAgentDescriptionSetup. This should not render anything directly now.");
             // This is now handled by the AgentList page when in "create new agent" mode 
@@ -860,12 +861,14 @@ const Dashboard = () => {
                 const tabId = optionParts[1];
                 const agentId = optionParts.slice(2).join('_'); // Handle agent IDs that might have underscores
                 
-                return <SetterAgentDetailPage
-                    user={user} 
-                    setSelectedOption={setSelectedOption}
-                    agentId={agentId}
-                    initialTabId={tabId}
-                />;
+                return <TemporaryAgentProvider>
+                    <SetterAgentDetailPage
+                        user={user} 
+                        setSelectedOption={setSelectedOption}
+                        agentId={agentId}
+                        initialTabId={tabId}
+                    />
+                </TemporaryAgentProvider>;
             } else {
                 console.error("Dashboard: Invalid SetterAgentDetail format", selectedOption);
                 return <div>Error: Invalid agent detail format</div>;

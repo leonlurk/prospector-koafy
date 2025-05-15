@@ -2,7 +2,13 @@ import React, { createContext, useContext, useState, useEffect, useCallback } fr
 import { getAuth, onAuthStateChanged, signOut } from "firebase/auth";
 import { getFirestore, doc, onSnapshot } from "firebase/firestore";
 import { auth, db } from '../../../firebaseConfig';
-import { getWhatsAppStatus, connectWhatsApp, disconnectWhatsApp } from '../services/api';
+import { 
+  getWhatsAppStatus, 
+  connectWhatsApp, 
+  disconnectWhatsApp,
+  pauseWhatsAppBot,
+  getBotStatus
+} from '../services/api';
 
 const WhatsAppContext = createContext();
 
@@ -22,6 +28,10 @@ export const WhatsAppProvider = ({ children }) => {
     qr: null,
     error: null,
     message: null
+  });
+  const [botStatus, setBotStatus] = useState({
+    isPaused: false,
+    isLoading: false
   });
   const [isLoading, setIsLoading] = useState(false);
   const [notifications, setNotifications] = useState([]);
@@ -82,6 +92,13 @@ export const WhatsAppProvider = ({ children }) => {
           error: data.error || null,
           message: data.message || null
         });
+        
+        if (data.botIsPaused !== undefined) {
+          setBotStatus(prev => ({
+            ...prev,
+            isPaused: data.botIsPaused
+          }));
+        }
       } else {
         console.log("[Firestore Listener] Status document does not exist for user:", userId);
         setWhatsappStatus({ status: 'disconnected', qr: null, error: null, message: 'Status not found.' });
@@ -133,8 +150,69 @@ export const WhatsAppProvider = ({ children }) => {
       } else {
         setWhatsappStatus(prev => ({ ...prev, error: response.message }));
       }
+      
+      await checkBotStatus(userId);
     } catch (error) {
       setWhatsappStatus(prev => ({ ...prev, status: 'error', error: error.message }));
+    }
+  };
+
+  const checkBotStatus = async (userId) => {
+    if (!userId) return;
+    
+    try {
+      const response = await getBotStatus(userId);
+      if (response.success && response.data?.status) {
+        setBotStatus(prev => ({
+          ...prev,
+          isPaused: response.data.status.botIsPaused || false
+        }));
+      }
+    } catch (error) {
+      console.error("Error obteniendo estado del bot:", error);
+    }
+  };
+
+  const toggleBotPause = async (pause) => {
+    if (!currentUser?.uid) return;
+    const userId = currentUser.uid;
+    
+    setBotStatus(prev => ({ ...prev, isLoading: true }));
+    
+    try {
+      const pauseValue = pause !== undefined ? pause : !botStatus.isPaused;
+      const response = await pauseWhatsAppBot(userId, pauseValue);
+      
+      if (response.success) {
+        setBotStatus(prev => ({
+          ...prev,
+          isPaused: pauseValue
+        }));
+        
+        addNotification({ 
+          type: 'success', 
+          title: pauseValue ? 'Bot pausado' : 'Bot activado', 
+          message: pauseValue ? 'El bot ha sido pausado correctamente.' : 'El bot ha sido activado correctamente.' 
+        });
+        
+        return true;
+      } else {
+        addNotification({ 
+          type: 'error', 
+          title: 'Error', 
+          message: response.message || 'Error al cambiar el estado del bot' 
+        });
+        return false;
+      }
+    } catch (error) {
+      addNotification({ 
+        type: 'error', 
+        title: 'Error', 
+        message: error.message || 'Error al cambiar el estado del bot' 
+      });
+      return false;
+    } finally {
+      setBotStatus(prev => ({ ...prev, isLoading: false }));
     }
   };
 
@@ -204,10 +282,12 @@ export const WhatsAppProvider = ({ children }) => {
     currentUser,
     authLoading,
     whatsappStatus,
+    botStatus,
     isLoading,
     connect,
     disconnect,
     checkStatus,
+    toggleBotPause,
     notifications,
     addNotification,
     clearNotifications,

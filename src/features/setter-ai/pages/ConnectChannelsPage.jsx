@@ -1,9 +1,10 @@
 import React, { useState, useCallback } from 'react';
 import WhatsAppConnection from '../components/WhatsAppConnection';
 // import WhatsAppInstructions from '../components/WhatsAppInstructions'; // Ya no se usa aquí
-import { Typography, Box, Paper, Grid, Tabs, Tab, Card, CardContent, CardActions, Button, CircularProgress } from '@mui/material';
+import { Typography, Box, Paper, Grid, Tabs, Tab, Card, CardContent, CardActions, Button, CircularProgress, List, ListItem, ListItemIcon, ListItemText } from '@mui/material';
 // Importar un icono de Play para el placeholder del video
 import PlayCircleOutlineIcon from '@mui/icons-material/PlayCircleOutline';
+import FiberManualRecordIcon from '@mui/icons-material/FiberManualRecord'; // Icon for list items
 import { useWhatsApp } from '../context/WhatsAppContext'; // Importar el contexto
 
 // --- IMPORTAR IMAGEN DIRECTAMENTE ---
@@ -86,69 +87,136 @@ function ConnectChannelsPage() {
       </Box>
 
       {/* Contenido de la pestaña WhatsApp */}
-      {tabValue === 0 && !showQrConnection && (
-        <Grid container spacing={4}>
-          {/* Grid item 1 - Aplicar props directamente */}
-          <Grid size={{ xs: 12, sm: 6, md: 4 }}>
-             <Card sx={{ borderRadius: '16px', boxShadow: 3 }}>
-              <Box sx={{ 
-                  height: 180, 
-                  display: 'flex', 
-                  alignItems: 'center', 
-                  justifyContent: 'center',
-                  backgroundImage: `url(${fondoPng})`, // <-- USAR VARIABLE IMPORTADA
-                  backgroundSize: 'cover', // <-- RESTAURAR COVER
-                  backgroundPosition: 'center',
-                  backgroundRepeat: 'no-repeat'
-              }}>
+      {tabValue === 0 && (
+        <Box>
+          {/* Mostrar Instrucciones si NO se está mostrando el QR */}
 
-              </Box>
-              <CardContent>
-                <Typography gutterBottom variant="h6" component="div" sx={{ fontWeight: 'thin' }}>
-                  Conecta con WhatsApp API
-                </Typography>
-                <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
-                  Aprende a como sacarle el maximo provecho a los agentes IA
-                </Typography>
-              </CardContent>
-              <CardActions sx={{ justifyContent: 'space-around', pb: 2, px: 2 }}>
-                <Button 
-                  variant="contained" 
-                  size="large" 
-                  onClick={handleConnectWhatsAppApi}
-                  // Deshabilitado si conectado, conectando, o mostrando QR
-                  disabled={isConnected || isConnecting || showQrConnection}
-                  sx={{ borderRadius: '20px', textTransform: 'none', flexGrow: 1, mx: 1 }}
-                >
-                  Ingresar
-                </Button>
-                <Button 
-                  variant="outlined"
-                  color="error"
-                  size="large" 
-                  onClick={handleDisconnectFromCard}
-                  // REVERTIDO: Volver a usar la variable canDisconnect como estaba antes
-                  disabled={!canDisconnect || isDisconnecting}
-                  sx={{ borderRadius: '20px', textTransform: 'none', flexGrow: 1, mx: 1 }}
-                >
-                  {isDisconnecting ? <CircularProgress size={24} color="inherit" /> : 'Desconectar'}
-                </Button>
-              </CardActions>
-            </Card>
-          </Grid>
-        </Grid>
-      )}
+          {/* Contenido existente de la pestaña WhatsApp (Tarjetas o Conexión QR) */}
+          {!showQrConnection ? (
+            <Grid container spacing={4} alignItems="stretch"> {/* Cambiado a stretch y eliminada instrucción anterior */}
+              {/* Columna Izquierda: Tarjeta de Conexión */}
+              <Grid item xs={12} md={5}> {/* Tarjeta ocupa 5/12 en pantallas medianas+ */}
+                 <Card sx={{ 
+                    borderRadius: '16px', 
+                    boxShadow: 3, 
+                    height: '100%', 
+                    display: 'flex', // Added for flex layout
+                    flexDirection: 'column' // Arrange items in a column
+                  }}> 
+                  <Box sx={{ 
+                      // height: 180, // Consider making this flexible or larger
+                      flexGrow: 1, // Allow this box to grow and take available space
+                      display: 'flex', 
+                      alignItems: 'center', 
+                      justifyContent: 'center',
+                      backgroundImage: `url(${fondoPng})`, // <-- USAR VARIABLE IMPORTADA
+                      backgroundSize: 'cover', // <-- RESTAURAR COVER
+                      backgroundPosition: 'center',
+                      backgroundRepeat: 'no-repeat'
+                  }}>
 
-       {/* Mostrar componente de conexión QR si se hizo clic en Ingresar API */}
-      {tabValue === 0 && showQrConnection && (
-        <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '50vh' }}>
-           {/* Aquí es donde se debe renderizar la vista del QR, 
-               usando el componente WhatsAppConnection que ya tiene la lógica */}
-           <WhatsAppConnection /> 
-           {/* Necesitaremos ajustar WhatsAppConnection para que encaje en este nuevo flujo */}
+                  </Box>
+                  <CardContent>
+                    <Typography gutterBottom variant="h6" component="div" sx={{ fontWeight: 'thin' }}>
+                      Conecta con WhatsApp API
+                    </Typography>
+                    <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+                      Aprende a como sacarle el máximo provecho a los agentes IA
+                    </Typography>
+                  </CardContent>
+                  <CardActions sx={{ 
+                    justifyContent: 'space-around', 
+                    pb: 2, px: 2, 
+                    mt: 'auto' // Push actions to the bottom if content is shorter
+                  }}>
+                    <Button 
+                      variant="contained" 
+                      size="large" 
+                      onClick={handleConnectWhatsAppApi}
+                      // Deshabilitado si conectado, conectando, o mostrando QR
+                      disabled={isConnected || isConnecting || showQrConnection}
+                      sx={{ borderRadius: '20px', textTransform: 'none', flexGrow: 1, mx: 1 }}
+                    >
+                      Vincular WhatsApp
+                    </Button>
+                    <Button 
+                      variant="outlined"
+                      color="error"
+                      size="large" 
+                      onClick={handleDisconnectFromCard}
+                      // REVERTIDO: Volver a usar la variable canDisconnect como estaba antes
+                      disabled={!canDisconnect || isDisconnecting}
+                      sx={{ borderRadius: '20px', textTransform: 'none', flexGrow: 1, mx: 1 }}
+                    >
+                      {isDisconnecting ? <CircularProgress size={24} color="inherit" /> : 'Desconectar'}
+                    </Button>
+                  </CardActions>
+                </Card>
+              </Grid>
+              {/* Columna Derecha: Instrucciones */}
+              <Grid item xs={12} md={7}> {/* Instrucciones ocupan 7/12 en pantallas medianas+ */}
+                <Paper elevation={2} sx={{ p: 3, borderRadius: '12px', height: '100%' }}> {/* Añadido height 100% */}
+                  <Typography variant="h6" gutterBottom sx={{ fontWeight: 'bold', mb: 2 }}>
+                    Cómo conectar tu WhatsApp:
+                  </Typography>
+                  <List dense>
+                    <ListItem disablePadding>
+                      <ListItemIcon sx={{ minWidth: '30px' }}><FiberManualRecordIcon sx={{ fontSize: '0.7rem' }} /></ListItemIcon>
+                      <ListItemText primary='Haz clic en el botón "Vincular WhatsApp" en el cuadro de la izquierda.' />
+                    </ListItem>
+                    <ListItem disablePadding>
+                      <ListItemIcon sx={{ minWidth: '30px' }}><FiberManualRecordIcon sx={{ fontSize: '0.7rem' }} /></ListItemIcon>
+                      <ListItemText primary="Espera a que aparezca el código QR en la pantalla." />
+                    </ListItem>
+                    <ListItem disablePadding>
+                      <ListItemIcon sx={{ minWidth: '30px' }}><FiberManualRecordIcon sx={{ fontSize: '0.7rem' }} /></ListItemIcon>
+                      <ListItemText primary="Abre WhatsApp en tu teléfono." />
+                    </ListItem>
+                    <ListItem disablePadding>
+                      <ListItemIcon sx={{ minWidth: '30px' }}><FiberManualRecordIcon sx={{ fontSize: '0.7rem' }} /></ListItemIcon>
+                      <ListItemText primary={<span>Ve a <strong>Configuración</strong> {'>'} <strong>Dispositivos vinculados</strong>.</span>} />
+                    </ListItem>
+                    <ListItem disablePadding>
+                      <ListItemIcon sx={{ minWidth: '30px' }}><FiberManualRecordIcon sx={{ fontSize: '0.7rem' }} /></ListItemIcon>
+                      <ListItemText primary='Toca "Vincular un dispositivo".' />
+                    </ListItem>
+                    <ListItem disablePadding>
+                      <ListItemIcon sx={{ minWidth: '30px' }}><FiberManualRecordIcon sx={{ fontSize: '0.7rem' }} /></ListItemIcon>
+                      <ListItemText primary="Escanea el código QR que se muestra en esta página." />
+                    </ListItem>
+                  </List>
+
+                  <Typography variant="h6" gutterBottom sx={{ fontWeight: 'bold', mt: 3, mb: 2 }}>
+                    Cómo desconectar tu WhatsApp:
+                  </Typography>
+                  <List dense>
+                    <ListItem disablePadding>
+                      <ListItemIcon sx={{ minWidth: '30px' }}><FiberManualRecordIcon sx={{ fontSize: '0.7rem' }} /></ListItemIcon>
+                      <ListItemText primary='Haz clic en el botón "Desconectar" en el cuadro de la izquierda en esta plataforma.' />
+                    </ListItem>
+                    <ListItem disablePadding>
+                      <ListItemIcon sx={{ minWidth: '30px' }}><FiberManualRecordIcon sx={{ fontSize: '0.7rem' }} /></ListItemIcon>
+                      <ListItemText primary="Para una desconexión completa, también debes desvincular el dispositivo desde tu teléfono." />
+                    </ListItem>
+                    <ListItem disablePadding>
+                      <ListItemIcon sx={{ minWidth: '30px' }}><FiberManualRecordIcon sx={{ fontSize: '0.7rem' }} /></ListItemIcon>
+                      <ListItemText primary={<span>En WhatsApp en tu teléfono, ve a <strong>Configuración</strong> {'>'} <strong>Dispositivos vinculados</strong>.</span>} />
+                    </ListItem>
+                    <ListItem disablePadding>
+                      <ListItemIcon sx={{ minWidth: '30px' }}><FiberManualRecordIcon sx={{ fontSize: '0.7rem' }} /></ListItemIcon>
+                      <ListItemText primary="Selecciona el dispositivo vinculado a esta plataforma y elige la opción para desvincular o cerrar sesión." />
+                    </ListItem>
+                  </List>
+                </Paper>
+              </Grid>
+            </Grid>
+          ) : (
+            <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '50vh' }}>
+              <WhatsAppConnection />
+            </Box>
+          )}
         </Box>
       )}
-
 
       {/* Contenido de la pestaña Instagram (Placeholder) */}
       {tabValue === 1 && (

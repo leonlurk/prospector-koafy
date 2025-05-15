@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import PropTypes from 'prop-types';
 import { generateFollowupQuestions } from '../services/api';
 
@@ -16,51 +16,56 @@ const styles = {
     alignItems: 'center',
     zIndex: 1000,
   },
-  modalContent: {
+  modalDialog: {
     backgroundColor: '#fff',
-    padding: '25px', // Increased padding
     borderRadius: '8px',
     boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)',
-    width: '90%', // Responsive width
-    maxWidth: '600px', // Max width
-    maxHeight: '90vh', // Max height
-    overflowY: 'auto', // Scrollable content
-    color: '#333', // Darker text for better readability
+    width: '90%',
+    maxWidth: '600px',
+    maxHeight: '90vh',
+    color: '#333',
+    display: 'flex',
+    flexDirection: 'column',
   },
   modalHeader: {
     display: 'flex',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: '20px',
-    borderBottom: '1px solid #eee', // Separator
-    paddingBottom: '10px',
+    borderBottom: '1px solid #eee',
+    padding: '25px 25px 10px 25px',
+    flexShrink: 0,
+  },
+  modalBody: {
+    padding: '20px 25px 25px 25px',
+    overflowY: 'auto',
+    flexGrow: 1,
   },
   modalTitle: {
     margin: 0,
-    fontSize: '1.5em', // Larger title
-    color: '#1a202c', // Darker title
+    fontSize: '1.5em',
+    color: '#1a202c',
   },
   closeButton: {
     background: 'transparent',
     border: 'none',
-    fontSize: '1.8em', // Larger close button
+    fontSize: '1.8em',
     cursor: 'pointer',
-    color: '#777', // Softer color for close button
+    color: '#777',
   },
   formGroup: {
-    marginBottom: '20px', // More spacing
+    marginBottom: '20px',
   },
   label: {
     display: 'block',
-    marginBottom: '8px', // More space for label
-    fontWeight: '600', // Bolder labels
+    marginBottom: '8px',
+    fontWeight: '600',
     fontSize: '0.95em',
-    color: '#4a5568', // Label color
+    color: '#4a5568',
   },
   input: {
     width: '100%',
-    padding: '12px', // More padding in inputs
-    border: '1px solid #ddd', // Softer border
+    padding: '12px',
+    border: '1px solid #ddd',
     borderRadius: '6px',
     boxSizing: 'border-box',
     fontSize: '1em',
@@ -71,7 +76,7 @@ const styles = {
     border: '1px solid #ddd',
     borderRadius: '6px',
     boxSizing: 'border-box',
-    minHeight: '100px', // Taller textarea
+    minHeight: '100px',
     fontSize: '1em',
     resize: 'vertical',
   },
@@ -82,34 +87,34 @@ const styles = {
   },
   checkbox: {
     marginRight: '10px',
-    accentColor: '#4A90E2', // Theme color for checkbox
+    accentColor: '#4A90E2',
   },
   buttonContainer: {
     display: 'flex',
     justifyContent: 'flex-end',
-    marginTop: '25px', // More space before buttons
+    marginTop: '25px',
   },
   button: {
-    padding: '12px 25px', // Larger buttons
+    padding: '12px 25px',
     border: 'none',
     borderRadius: '6px',
     cursor: 'pointer',
     fontSize: '1em',
-    fontWeight: '600', // Bolder button text
+    fontWeight: '600',
   },
   cancelButton: {
-    backgroundColor: '#f0f0f0', // Light grey
+    backgroundColor: '#f0f0f0',
     color: '#555',
     marginRight: '10px',
   },
   submitButton: {
-    backgroundColor: '#4A90E2', // Theme color
+    backgroundColor: '#4A90E2',
     color: 'white',
   },
   backButton: {
-    backgroundColor: '#f0f0f0', // Light grey
+    backgroundColor: '#f0f0f0',
     color: '#555',
-    marginRight: 'auto', // Push to left
+    marginRight: 'auto',
   },
   disabledButton: {
     backgroundColor: '#ccc',
@@ -195,6 +200,8 @@ const PromptHelperModal = ({ isOpen, onClose, onSubmit, isLoading, userId }) => 
   const [followupResponses, setFollowupResponses] = useState({});
   const [loadingFollowupQuestions, setLoadingFollowupQuestions] = useState(false);
 
+  const modalContentRef = useRef(null);
+
   useEffect(() => {
     if (isOpen) {
       // Reset to step 1 when modal opens
@@ -216,6 +223,13 @@ const PromptHelperModal = ({ isOpen, onClose, onSubmit, isLoading, userId }) => 
       setPrimaryCallToAction('');
     }
   }, [isOpen]);
+
+  // useEffect to scroll to top when currentStep changes
+  useEffect(() => {
+    if (modalContentRef.current) {
+      modalContentRef.current.scrollTo(0, 0);
+    }
+  }, [currentStep]);
 
   if (!isOpen) {
     return null;
@@ -433,7 +447,7 @@ const PromptHelperModal = ({ isOpen, onClose, onSubmit, isLoading, userId }) => 
 
   return (
     <div style={styles.modalOverlay} /* onClick={onClose} */ >
-      <div style={styles.modalContent} onClick={(e) => e.stopPropagation()}>
+      <div style={styles.modalDialog} onClick={(e) => e.stopPropagation()}>
         <div style={styles.modalHeader}>
           <h2 style={styles.modalTitle}>
             {currentStep === 1 ? 'Asistente de Creación de Prompt' : 'Preguntas Adicionales'}
@@ -441,141 +455,116 @@ const PromptHelperModal = ({ isOpen, onClose, onSubmit, isLoading, userId }) => 
           <button style={styles.closeButton} onClick={onClose}>&times;</button>
         </div>
 
-        {/* Progress Indicator */}
-        <div style={styles.progressContainer}>
-          <div style={styles.progressBar}>
+        <div ref={modalContentRef} style={styles.modalBody}>
+          <div style={styles.progressContainer}>
             <div 
-              style={{
-                ...styles.progressFill, 
-                width: `${(currentStep / totalSteps) * 100}%`
-              }}
-            />
+              style={styles.progressBar}
+            >
+              <div 
+                style={{
+                  ...styles.progressFill, 
+                  width: `${(currentStep / totalSteps) * 100}%`
+                }}
+              />
+            </div>
+            <p style={styles.progressText}>Paso {currentStep} de {totalSteps}</p>
           </div>
-          <p style={styles.progressText}>Paso {currentStep} de {totalSteps}</p>
-        </div>
-        {renderStepIndicator()}
+          {renderStepIndicator()}
 
-        {currentStep === 1 && (
-          <form onSubmit={handleInitialSubmit}>
-            {/* Objective */}
-            <div style={styles.formGroup}>
-              <label htmlFor="objective" style={styles.label}>1. ¿Cuál es el objetivo principal de este Agente IA? *</label>
-              <textarea id="objective" style={styles.textarea} value={objective} onChange={(e) => setObjective(e.target.value)} placeholder="Ej: Responder preguntas frecuentes sobre nuestros productos, generar leads, agendar citas..." />
-            </div>
-
-            {/* Agent Name/Role */}
-            <div style={styles.formGroup}>
-                <label htmlFor="agentNameOrRole" style={styles.label}>2. ¿Qué nombre o rol tendrá el Agente IA?</label>
-                <input type="text" id="agentNameOrRole" style={styles.input} value={agentNameOrRole} onChange={(e) => setAgentNameOrRole(e.target.value)} placeholder="Ej: Asistente de Ventas, Soporte Técnico Nivel 1, Guía Virtual" />
-            </div>
-
-            {/* Company/Context */}
-            <div style={styles.formGroup}>
-                <label htmlFor="companyOrContext" style={styles.label}>3. ¿Para qué empresa o en qué contexto principal operará?</label>
-                <input type="text" id="companyOrContext" style={styles.input} value={companyOrContext} onChange={(e) => setCompanyOrContext(e.target.value)} placeholder="Ej: Mi Tienda Online, Consultorio Dental Dr. Ejemplo, Plataforma Educativa XYZ" />
-            </div>
-            
-            {/* Target Audience */}
-            <div style={styles.formGroup}>
-                <label htmlFor="targetAudience" style={styles.label}>4. ¿Cuál es la audiencia o cliente ideal al que se dirige?</label>
-                <input type="text" id="targetAudience" style={styles.input} value={targetAudience} onChange={(e) => setTargetAudience(e.target.value)} placeholder="Ej: Jóvenes adultos interesados en tecnología, Padres primerizos, Profesionales del marketing" />
-            </div>
-
-            {/* Desired Tone */}
-            <div style={styles.formGroup}>
-                <label htmlFor="desiredTone" style={styles.label}>5. ¿Qué tono de comunicación debe usar el Agente?</label>
-                <input type="text" id="desiredTone" style={styles.input} value={desiredTone} onChange={(e) => setDesiredTone(e.target.value)} placeholder="Ej: Amigable y cercano, Formal y profesional, Entusiasta y motivador" />
-            </div>
-
-            {/* Needs Tools */}
-            {/*
-            <div style={styles.checkboxContainer}>
-              <input type="checkbox" id="needsTools" style={styles.checkbox} checked={needsTools} onChange={(e) => setNeedsTools(e.target.checked)} />
-              <label htmlFor="needsTools" style={{...styles.label, marginBottom: 0}}>6. ¿El Agente necesitará acceder a herramientas o funciones específicas (ej: calendario, CRM, base de datos de productos)?</label>
-            </div>
-            */}
-
-            {/* Tools */}
-            {/*
-            {needsTools && (
+          {currentStep === 1 && (
+            <form onSubmit={handleInitialSubmit}>
               <div style={styles.formGroup}>
-                <label htmlFor="tools" style={styles.label}>Si es así, ¿cuáles herramientas o funciones?</label>
-                <textarea id="tools" style={styles.textarea} value={tools} onChange={(e) => setTools(e.target.value)} placeholder="Ej: Acceso a API de calendario para agendar, consulta a base de datos de FAQs, etc."/>
+                <label htmlFor="objective" style={styles.label}>1. ¿Cuál es el objetivo principal de este Agente IA? *</label>
+                <textarea id="objective" style={styles.textarea} value={objective} onChange={(e) => setObjective(e.target.value)} placeholder="Ej: Responder preguntas frecuentes sobre nuestros productos, generar leads, agendar citas..." />
               </div>
-            )}
-            */}
 
-            {/* Expected Inputs */}
-            <div style={styles.formGroup}>
-              <label htmlFor="expectedInputs" style={styles.label}>7. ¿Qué tipo de preguntas o frases esperas de los clientes?</label>
-              <textarea id="expectedInputs" style={styles.textarea} value={expectedInputs} onChange={(e) => setExpectedInputs(e.target.value)} placeholder="Ej: '¿Cuánto cuesta el producto X?', 'Quiero hablar con un humano', 'Necesito ayuda con mi pedido'" />
-            </div>
-
-            {/* Expected Outputs */}
-            <div style={styles.formGroup}>
-              <label htmlFor="expectedOutputs" style={styles.label}>8. ¿Cómo debería responder o qué acciones debería tomar el Agente idealmente?</label>
-              <textarea id="expectedOutputs" style={styles.textarea} value={expectedOutputs} onChange={(e) => setExpectedOutputs(e.target.value)} placeholder="Ej: Proporcionar precio y enlace, ofrecer transferir la conversación, pedir número de orden para verificar" />
-            </div>
-            
-            {/* Key Info to Include */}
-            <div style={styles.formGroup}>
-                <label htmlFor="keyInfoToInclude" style={styles.label}>9. ¿Hay alguna información clave que el Agente DEBE incluir o conocer?</label>
-                <textarea id="keyInfoToInclude" style={styles.textarea} value={keyInfoToInclude} onChange={(e) => setKeyInfoToInclude(e.target.value)} placeholder="Ej: Horarios de atención, políticas de devolución, nombres de productos específicos" />
-            </div>
-
-            {/* Things to Avoid */}
-            <div style={styles.formGroup}>
-                <label htmlFor="thingsToAvoid" style={styles.label}>10. ¿Hay algo que el Agente DEBE EVITAR decir o hacer?</label>
-                <textarea id="thingsToAvoid" style={styles.textarea} value={thingsToAvoid} onChange={(e) => setThingsToAvoid(e.target.value)} placeholder="Ej: Dar opiniones personales, prometer cosas que no puede cumplir, usar jerga muy técnica" />
-            </div>
-
-            {/* Primary Call to Action */}
-            <div style={styles.formGroup}>
-                <label htmlFor="primaryCallToAction" style={styles.label}>11. ¿Cuál es la principal llamada a la acción que el Agente debe impulsar?</label>
-                <input type="text" id="primaryCallToAction" style={styles.input} value={primaryCallToAction} onChange={(e) => setPrimaryCallToAction(e.target.value)} placeholder="Ej: Completar una compra, Registrarse para un webinar, Solicitar una demostración" />
-            </div>
-
-            <div style={styles.buttonContainer}>
-              <button type="button" onClick={onClose} style={{...styles.button, ...styles.cancelButton}}>Cancelar</button>
-              <button 
-                type="submit" 
-                style={{...styles.button, ...styles.submitButton, ...(loadingFollowupQuestions || isLoading ? styles.disabledButton : {})}}
-                disabled={loadingFollowupQuestions || isLoading}
-              >
-                {loadingFollowupQuestions ? 'Cargando Preguntas...' : (followupQuestions.length > 0 ? 'Siguiente' : 'Generar Prompt')} 
-              </button>
-            </div>
-          </form>
-        )}
-
-        {currentStep === 2 && followupQuestions.length > 0 && (
-          <form onSubmit={handleFinalSubmit}>
-            {followupQuestions.map((q) => (
-              <div key={q.id} style={styles.formGroup}>
-                <label style={styles.label}>{q.question}</label>
-                {renderQuestionInput(q)}
+              <div style={styles.formGroup}>
+                  <label htmlFor="agentNameOrRole" style={styles.label}>2. ¿Qué nombre o rol tendrá el Agente IA?</label>
+                  <input type="text" id="agentNameOrRole" style={styles.input} value={agentNameOrRole} onChange={(e) => setAgentNameOrRole(e.target.value)} placeholder="Ej: Asistente de Ventas, Soporte Técnico Nivel 1, Guía Virtual" />
               </div>
-            ))}
-            <div style={styles.buttonContainer}>
-              <button 
-                type="button" 
-                onClick={() => setCurrentStep(1)} 
-                style={{...styles.button, ...styles.backButton}}
-                disabled={isLoading}
-              >
-                Atrás
-              </button>
-              <button type="button" onClick={onClose} style={{...styles.button, ...styles.cancelButton}}>Cancelar</button>
-              <button 
-                type="submit" 
-                style={{...styles.button, ...styles.submitButton, ...(isLoading ? styles.disabledButton : {})}}
-                disabled={isLoading}
-              >
-                {isLoading ? 'Generando Prompt...' : 'Generar Prompt'}
-              </button>
-            </div>
-          </form>
-        )}
+
+              <div style={styles.formGroup}>
+                  <label htmlFor="companyOrContext" style={styles.label}>3. ¿Para qué empresa o en qué contexto principal operará?</label>
+                  <input type="text" id="companyOrContext" style={styles.input} value={companyOrContext} onChange={(e) => setCompanyOrContext(e.target.value)} placeholder="Ej: Mi Tienda Online, Consultorio Dental Dr. Ejemplo, Plataforma Educativa XYZ" />
+              </div>
+              
+              <div style={styles.formGroup}>
+                  <label htmlFor="targetAudience" style={styles.label}>4. ¿Cuál es la audiencia o cliente ideal al que se dirige?</label>
+                  <input type="text" id="targetAudience" style={styles.input} value={targetAudience} onChange={(e) => setTargetAudience(e.target.value)} placeholder="Ej: Jóvenes adultos interesados en tecnología, Padres primerizos, Profesionales del marketing" />
+              </div>
+
+              <div style={styles.formGroup}>
+                  <label htmlFor="desiredTone" style={styles.label}>5. ¿Qué tono de comunicación debe usar el Agente?</label>
+                  <input type="text" id="desiredTone" style={styles.input} value={desiredTone} onChange={(e) => setDesiredTone(e.target.value)} placeholder="Ej: Amigable y cercano, Formal y profesional, Entusiasta y motivador" />
+              </div>
+
+              <div style={styles.formGroup}>
+                  <label htmlFor="expectedInputs" style={styles.label}>7. ¿Qué tipo de preguntas o frases esperas de los clientes?</label>
+                  <textarea id="expectedInputs" style={styles.textarea} value={expectedInputs} onChange={(e) => setExpectedInputs(e.target.value)} placeholder="Ej: '¿Cuánto cuesta el producto X?', 'Quiero hablar con un humano', 'Necesito ayuda con mi pedido'" />
+              </div>
+
+              <div style={styles.formGroup}>
+                  <label htmlFor="expectedOutputs" style={styles.label}>8. ¿Cómo debería responder o qué acciones debería tomar el Agente idealmente?</label>
+                  <textarea id="expectedOutputs" style={styles.textarea} value={expectedOutputs} onChange={(e) => setExpectedOutputs(e.target.value)} placeholder="Ej: Proporcionar precio y enlace, ofrecer transferir la conversación, pedir número de orden para verificar" />
+              </div>
+              
+              <div style={styles.formGroup}>
+                  <label htmlFor="keyInfoToInclude" style={styles.label}>9. ¿Hay alguna información clave que el Agente DEBE incluir o conocer?</label>
+                  <textarea id="keyInfoToInclude" style={styles.textarea} value={keyInfoToInclude} onChange={(e) => setKeyInfoToInclude(e.target.value)} placeholder="Ej: Horarios de atención, políticas de devolución, nombres de productos específicos" />
+              </div>
+
+              <div style={styles.formGroup}>
+                  <label htmlFor="thingsToAvoid" style={styles.label}>10. ¿Hay algo que el Agente DEBE EVITAR decir o hacer?</label>
+                  <textarea id="thingsToAvoid" style={styles.textarea} value={thingsToAvoid} onChange={(e) => setThingsToAvoid(e.target.value)} placeholder="Ej: Dar opiniones personales, prometer cosas que no puede cumplir, usar jerga muy técnica" />
+              </div>
+
+              <div style={styles.formGroup}>
+                  <label htmlFor="primaryCallToAction" style={styles.label}>11. ¿Cuál es la principal llamada a la acción que el Agente debe impulsar?</label>
+                  <input type="text" id="primaryCallToAction" style={styles.input} value={primaryCallToAction} onChange={(e) => setPrimaryCallToAction(e.target.value)} placeholder="Ej: Completar una compra, Registrarse para un webinar, Solicitar una demostración" />
+              </div>
+
+              <div style={styles.buttonContainer}>
+                <button type="button" onClick={onClose} style={{...styles.button, ...styles.cancelButton}}>Cancelar</button>
+                <button 
+                  type="submit" 
+                  style={{...styles.button, ...styles.submitButton, ...(loadingFollowupQuestions || isLoading ? styles.disabledButton : {})}}
+                  disabled={loadingFollowupQuestions || isLoading}
+                >
+                  {loadingFollowupQuestions ? 'Cargando Preguntas...' : (followupQuestions.length > 0 ? 'Siguiente' : 'Generar Prompt')} 
+                </button>
+              </div>
+            </form>
+          )}
+
+          {currentStep === 2 && followupQuestions.length > 0 && (
+            <form onSubmit={handleFinalSubmit}>
+              {followupQuestions.map((q) => (
+                <div key={q.id} style={styles.formGroup}>
+                  <label style={styles.label}>{q.question}</label>
+                  {renderQuestionInput(q)}
+                </div>
+              ))}
+              <div style={styles.buttonContainer}>
+                <button 
+                  type="button" 
+                  onClick={() => setCurrentStep(1)} 
+                  style={{...styles.button, ...styles.backButton}}
+                  disabled={isLoading}
+                >
+                  Atrás
+                </button>
+                <button type="button" onClick={onClose} style={{...styles.button, ...styles.cancelButton}}>Cancelar</button>
+                <button 
+                  type="submit" 
+                  style={{...styles.button, ...styles.submitButton, ...(isLoading ? styles.disabledButton : {})}}
+                  disabled={isLoading}
+                >
+                  {isLoading ? 'Generando Prompt...' : 'Generar Prompt'}
+                </button>
+              </div>
+            </form>
+          )}
+        </div>
       </div>
     </div>
   );
